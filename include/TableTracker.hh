@@ -25,6 +25,7 @@
 
 using namespace std;
 using namespace cv;
+using namespace Eigen;
 
 class Timer
 {
@@ -53,19 +54,21 @@ private:
 
 class TableTracker {
 public:
-	TableTracker(Mat xy_table, Eigen::Vector4f quat, Eigen::Vector3f tvec);
+	TableTracker(Mat xy_table, Quaternionf quat, Vector3f tvec);
 	virtual ~TableTracker();
 
 	void ProcessCurrentFrame();
 	void Render();
 
 	// Processing Functions
-	void TableInfo();
 	bool FindTableCenter();
-	vtkSmartPointer<vtkTransform> Transform_Kinect_View(float v1[3], float v2[3]);
+	vtkSmartPointer<vtkTransform> Transform_KinectView(float v1[3], float v2[3]);
+	Mat GenerateColorTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t color_image);
+
 	vector<Mat> GenerateTableMask(Mat xy_table, int deg);
-	Mat GenerateTablePointCloud(const Mat depth_mat, const Mat xy_table, int *point_count);
-	Mat ProjectPointCloud2Image(Mat point_cloud_3d, Mat xy_table);
+	Mat GenerateBinaryTablePointCloud(const Mat depth_mat, int *point_count);
+	Mat ProjectBinaryPointCloud2Image(Mat point_cloud_3d, Mat xy_table);
+
 	tuple<double, double, Mat> MatcingData(vector<Mat> maskVec, Mat point_cloud_2d, int deg);
 
 	// Access Functions
@@ -73,44 +76,58 @@ public:
 		_color.copyTo(color_mat);
 		_depth.copyTo(depth_mat);
 	}
-	void SetTableOrigin(float x, float y, float z);
+	void TransTableOrigin(float x, float y, float z) {
+		// +x: right, -x: left, +y: down, -y: up, +z: push, -z: pull
+		trans_table[0] = x;
+		trans_table[1] = -y;
+		trans_table[2] = -z;
+		for (int i=0; i<3; i++) {
+			world_origin[i] += trans_table[i];
+		}
+	}
+	void SetNewImage(k4a_image_t color_image, k4a_image_t point_image) {
+		color_img = color_image;
+		point_img = point_image;
+	}
 
 	// Auxiliary Functions
-	Mat GeneratePointCloud(const Mat depth_mat, const Mat xy_table, int *point_count);
-	void WritePointCloud(string file_name, const Mat point_cloud, int point_count);
 	vector<Mat> Read_K4A_MKV_Record(string fileName, Mat xy_table);
 
 private:
+	// Mat, Image
 	Mat xy_table;
-	Eigen::Vector4f quat;
-	Eigen::Vector3f tvec;
 	int width, height;
+	Mat color_mat, depth_mat;
+	k4a_image_t color_img, depth_img, point_img;
 
-	Mat color_mat, depth_mat, color_resize;
+	// Table
+	float lat_width, long_width, height_width, floor_height, long_pos;
+	float top_margin, bot_margin;
+	float ext_topPoint[3], ext_botPoint[3];
+	float trans_table[3];
+
+	// World
+	Quaternionf quat;
+	Vector3f tvec;
+	float world_origin[3], world_normal[3];
+	vtkSmartPointer<vtkTransform> transform;
+
+	// Masks
 	int deg;
 	vector<Mat> maskVec;
-	int point_count;
+	tuple<double,double,Mat> results;
 
-	bool isCrop, isRot, isMask1, isMask2, isMove, isCenter;
+	// Center
+	bool isCrop, isRot, isMask1, isMask2, isCenter, isFind;
 	Point2i mask1_p1, mask1_p2, mask2_p1, mask2_p2;
 	int transX, transY;
 	Point2i tableCenter;
-
-	tuple<double,double,Mat> results;
-	float x_avg_length, y_avg_length;
-	float scalingFactor;
-
-	// Table
-	float lat_width, long_width, height_width, long_pos;
-	float margin_mm;
-	float plane_normal[3], plane_origin[3], originT[3], plane_tfOrigin[3], plane_tfOrigin2[3];
-	float floor_origin[3], floor_normal[3], trans_table[3], floor_tfOrigin[3];
-	float cam_height;
 	Mat mask1, mask2;
 	float max_sim1, max_sim2;
+	Mat draw, view;
 
-	vtkSmartPointer<vtkTransform> transform;
-	Timer procTimer;
+	// Timer
+	Timer frameTimer;
 };
 
 

@@ -20,7 +20,7 @@ static k4a_device_configuration_t get_default_config()
 {
 	k4a_device_configuration_t camera_config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
 	camera_config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-	camera_config.color_resolution = K4A_COLOR_RESOLUTION_2160P;
+	camera_config.color_resolution = K4A_COLOR_RESOLUTION_720P;
 	camera_config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
 	camera_config.camera_fps = K4A_FRAMES_PER_SECOND_15;
 	camera_config.subordinate_delay_off_master_usec = 0;
@@ -98,11 +98,53 @@ static k4a_image_t create_color_image_like(const k4a_image_t im)
 					 &img);
 	return img;
 }
+static k4a_image_t create_point_cloud_based(const k4a_image_t im)
+{
+	k4a_image_t img;
+
+	k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
+					 k4a_image_get_width_pixels(im),
+					 k4a_image_get_height_pixels(im),
+					 k4a_image_get_width_pixels(im) * 3 * (int)sizeof(int16_t),
+					 &img);
+	return img;
+}
 
 
 
 
-static cv::Mat create_xy_table(const k4a_calibration_t calibration)
+static cv::Mat create_color_xy_table(const k4a_calibration_t calibration)
+{
+	k4a_float2_t p;
+	k4a_float3_t ray;
+
+	int width = calibration.color_camera_calibration.resolution_width;
+	int height = calibration.color_camera_calibration.resolution_height;
+
+	cv::Mat xy_table = cv::Mat::zeros(height,width, CV_32FC2);
+	float* xy_table_data = (float*)xy_table.data;
+	int valid;
+
+	for (int y = 0, idx = 0; y < height; y++)
+	{
+		p.xy.y = (float)y;
+		for (int x = 0; x < width; x++, idx++)
+		{
+			p.xy.x = (float)x;
+			k4a_calibration_2d_to_3d(&calibration, &p, 1.f, K4A_CALIBRATION_TYPE_COLOR, K4A_CALIBRATION_TYPE_COLOR, &ray, &valid);
+			if (valid) {
+				xy_table_data[idx*2] = ray.xyz.x;
+				xy_table_data[idx*2+1] = ray.xyz.y;
+			} else {
+				xy_table_data[idx*2] = nanf("");
+				xy_table_data[idx*2+1] = nanf("");
+			}
+		}
+	}
+	return xy_table;
+}
+
+static cv::Mat create_depth_xy_table(const k4a_calibration_t calibration)
 {
 	k4a_float2_t p;
 	k4a_float3_t ray;
@@ -132,3 +174,239 @@ static cv::Mat create_xy_table(const k4a_calibration_t calibration)
 	}
 	return xy_table;
 }
+
+struct color_point_t
+{
+    int16_t xyz[3];
+    uint8_t rgb[3];
+};
+
+void tranformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image,
+                                             const k4a_image_t color_image,
+                                             const char *file_name)
+{
+    std::vector<color_point_t> points;
+
+    int width = k4a_image_get_width_pixels(point_cloud_image);
+    int height = k4a_image_get_height_pixels(color_image);
+
+    int16_t *point_cloud_image_data = (int16_t *)(void *)k4a_image_get_buffer(point_cloud_image);
+    uint8_t *color_image_data = k4a_image_get_buffer(color_image);
+
+    for (int i = 0; i < width * height; i++)
+    {
+        color_point_t point;
+        point.xyz[0] = point_cloud_image_data[3 * i + 0];
+        point.xyz[1] = point_cloud_image_data[3 * i + 1];
+        point.xyz[2] = point_cloud_image_data[3 * i + 2];
+        if (point.xyz[2] == 0)
+        {
+            continue;
+        }
+
+        point.rgb[0] = color_image_data[4 * i + 0];
+        point.rgb[1] = color_image_data[4 * i + 1];
+        point.rgb[2] = color_image_data[4 * i + 2];
+        uint8_t alpha = color_image_data[4 * i + 3];
+
+        if (point.rgb[0] == 0 && point.rgb[1] == 0 && point.rgb[2] == 0 && alpha == 0)
+        {
+            continue;
+        }
+
+        points.push_back(point);
+    }
+
+#define PLY_START_HEADER "ply"
+#define PLY_END_HEADER "end_header"
+#define PLY_ASCII "format ascii 1.0"
+#define PLY_ELEMENT_VERTEX "element vertex"
+
+    // save to the ply file
+    std::ofstream ofs(file_name); // text mode first
+    ofs << PLY_START_HEADER << std::endl;
+    ofs << PLY_ASCII << std::endl;
+    ofs << PLY_ELEMENT_VERTEX << " " << points.size() << std::endl;
+    ofs << "property float x" << std::endl;
+    ofs << "property float y" << std::endl;
+    ofs << "property float z" << std::endl;
+    ofs << "property uchar red" << std::endl;
+    ofs << "property uchar green" << std::endl;
+    ofs << "property uchar blue" << std::endl;
+    ofs << PLY_END_HEADER << std::endl;
+    ofs.close();
+
+    std::stringstream ss;
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        // image data is BGR
+        ss << (float)points[i].xyz[0] << " " << (float)points[i].xyz[1] << " " << (float)points[i].xyz[2];
+        ss << " " << (float)points[i].rgb[2] << " " << (float)points[i].rgb[1] << " " << (float)points[i].rgb[0];
+        ss << std::endl;
+    }
+    std::ofstream ofs_text(file_name, std::ios::out | std::ios::app);
+    ofs_text.write(ss.str().c_str(), (std::streamsize)ss.str().length());
+}
+
+static bool point_cloud_depth_to_color(k4a_transformation_t transformation_handle,
+                                       const k4a_image_t depth_image,
+                                       const k4a_image_t color_image)
+{
+    // transform color image into depth camera geometry
+    int color_image_width_pixels = k4a_image_get_width_pixels(color_image);
+    int color_image_height_pixels = k4a_image_get_height_pixels(color_image);
+
+    k4a_image_t transformed_depth_image = NULL;
+    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16,
+                                                 color_image_width_pixels,
+                                                 color_image_height_pixels,
+                                                 color_image_width_pixels * (int)sizeof(uint16_t),
+                                                 &transformed_depth_image))
+    {
+        printf("Failed to create transformed depth image\n");
+        return false;
+    }
+
+    k4a_image_t point_cloud_image = NULL;
+    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
+                                                 color_image_width_pixels,
+                                                 color_image_height_pixels,
+                                                 color_image_width_pixels * 3 * (int)sizeof(int16_t),
+                                                 &point_cloud_image))
+    {
+        printf("Failed to create point cloud image\n");
+        return false;
+    }
+
+    if (K4A_RESULT_SUCCEEDED !=
+        k4a_transformation_depth_image_to_color_camera(transformation_handle, depth_image, transformed_depth_image))
+    {
+        printf("Failed to compute transformed depth image\n");
+        return false;
+    }
+
+    if (K4A_RESULT_SUCCEEDED != k4a_transformation_depth_image_to_point_cloud(transformation_handle,
+                                                                              transformed_depth_image,
+                                                                              K4A_CALIBRATION_TYPE_COLOR,
+                                                                              point_cloud_image))
+    {
+        printf("Failed to compute point cloud\n");
+        return false;
+    }
+
+//    tranformation_helpers_write_point_cloud(point_cloud_image, color_image, file_name.c_str());
+
+    k4a_image_release(transformed_depth_image);
+    k4a_image_release(point_cloud_image);
+
+    return true;
+}
+
+
+Mat Read_K4A_MKV_Record(string fileName, Mat xy_table)
+{
+	int width = xy_table.cols;
+	int height = xy_table.rows;
+
+	Timer rec_timer;
+	rec_timer.start();
+	VideoCapture vcap(fileName);
+	if ( !vcap.isOpened() )
+		cerr << "Fail to read video record" << endl;
+
+	Mat color_frame, depth_frame;
+	vector<Mat> colorVec, depthVec;
+
+	while(1)
+	{
+		vcap >> color_frame;
+		if (color_frame.empty()) break;
+		colorVec.push_back(color_frame);
+	}
+
+//	system(("ffmpeg -i " + fileName + " -map 0:1 -vsync 0 ./record/depth%d.png").c_str());
+
+	cout << colorVec.size() << endl;
+
+	for (size_t i=1; i<=colorVec.size(); i++) {
+		string depthFile = "./record/depth" + to_string(i) + ".png";
+		depth_frame = imread(depthFile, IMREAD_ANYDEPTH );
+		depthVec.push_back(depth_frame);
+//		imshow("depth", depth_frame);
+//		char key = (char)waitKey(1000/30);
+//		if (key == 'q') {
+//			break;
+//		}
+	}
+
+	Mat point_cloud = Mat::zeros(height, width, CV_32FC3);
+	uint16_t* depth_data = (uint16_t*)depthVec[0].data;
+	float* xy_table_data = (float*)xy_table.data;
+	float* point_cloud_data = (float*)point_cloud.data;
+
+	int point_count(0);
+	for (int y=0, idx=0; y<height; y++) {
+		for (int x=0; x<width; x++, idx++) {
+			int channel = y * width * 3 + x * 3;
+			if (depth_data[idx] != 0 && !isnan(xy_table_data[idx*2]) && !isnan(xy_table_data[idx*2+1]) )
+			{
+				float X = xy_table_data[idx*2]     * depth_data[idx];
+				float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
+				float Z = depth_data[idx];
+				float p[3] = {X,Y,Z};
+
+				point_cloud_data[channel + 0] = xy_table_data[idx*2]     * depth_data[idx];// + calib_point[0];
+				point_cloud_data[channel + 1] = xy_table_data[idx*2 + 1] * depth_data[idx];// + calib_point[1];
+				point_cloud_data[channel + 2] = depth_data[idx];// + calib_point[2];
+				point_count++;
+			}
+			else
+			{
+				point_cloud_data[channel + 0] = nanf("");
+				point_cloud_data[channel + 1] = nanf("");
+				point_cloud_data[channel + 2] = nanf("");
+			}
+		}
+	}
+
+	string file_name = "rec.ply";
+    // save to the ply file
+    std::ofstream ofs(file_name); // text mode first
+    ofs << "ply" << std::endl;
+    ofs << "format ascii 1.0" << std::endl;
+    ofs << "element vertex "  << point_count << std::endl;
+    ofs << "property float x" << std::endl;
+    ofs << "property float y" << std::endl;
+    ofs << "property float z" << std::endl;
+    ofs << "end_header" << std::endl;
+    ofs.close();
+
+    std::stringstream ss;
+    for (int y=0, idx=0; y<height; y++) {
+		for (int x=0; x<width; x++, idx++) {
+			int channel = y * width * 3 + x * 3;
+			if (isnan(point_cloud_data[channel + 0]) || isnan(point_cloud_data[channel + 1]) || isnan(point_cloud_data[channel + 2]) )
+			{
+				continue;
+			}
+			ss << (float)point_cloud_data[channel + 0] << " "
+			   << (float)point_cloud_data[channel + 1] << " "
+			   << (float)point_cloud_data[channel + 2] << std::endl;
+		}
+    }
+    std::ofstream ofs_text(file_name, std::ios::out | std::ios::app);
+    ofs_text.write(ss.str().c_str(), (std::streamsize)ss.str().length());
+
+	rec_timer.stop();
+	cout << "Frame #: " << colorVec.size() << endl;
+	cout << "Reading time: " << rec_timer.time() << endl;
+
+//	system("rm ./record/*.png");
+
+	exit(0);
+
+	return point_cloud;
+}
+
+
+

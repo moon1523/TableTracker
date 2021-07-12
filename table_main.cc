@@ -8,146 +8,21 @@
 
 
 int CHARUCO_SYNC(int argc, char** argv);
-
-pair<Eigen::Vector4f, Eigen::Vector3f> ReadCharucoData(string fileName);
-
-//void ContouringColorImg()
-//{
-//	Mat imgColor = imread("./record/color0001.png", IMREAD_COLOR);
-//	imshow("out1", imgColor);
-//	Mat imgGray = imread("./record/color0001.png", IMREAD_GRAYSCALE);
-//	Mat bin;
-//	cv::threshold(imgGray, bin, 200, 255, cv::THRESH_BINARY);
-//	Mat edges = bin.clone();
-//	imshow("out2", bin);
-//	std::vector<std::vector<cv::Point>> contours, filteredContours;
-//	cv::findContours(bin, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
-//	Mat cont = Mat::zeros(edges.rows, edges.cols, CV_8UC1);
-//	cv::drawContours(cont, contours, -1, cv::Scalar(255));
-//	imshow("out3", cont);
-//	waitKey(0);
-//}
-
-Mat Read_K4A_MKV_Record(string fileName, Mat xy_table)
-{
-	int width = xy_table.cols;
-	int height = xy_table.rows;
-
-	Timer rec_timer;
-	rec_timer.start();
-	VideoCapture vcap(fileName);
-	if ( !vcap.isOpened() )
-		cerr << "Fail to read video record" << endl;
-
-	Mat color_frame, depth_frame;
-	vector<Mat> colorVec, depthVec;
-
-	while(1)
-	{
-		vcap >> color_frame;
-		if (color_frame.empty()) break;
-		colorVec.push_back(color_frame);
-	}
-
-//	system(("ffmpeg -i " + fileName + " -map 0:1 -vsync 0 ./record/depth%d.png").c_str());
-
-	cout << colorVec.size() << endl;
-
-	for (size_t i=1; i<=colorVec.size(); i++) {
-		string depthFile = "./record/depth" + to_string(i) + ".png";
-		depth_frame = imread(depthFile, IMREAD_ANYDEPTH );
-		depthVec.push_back(depth_frame);
-//		imshow("depth", depth_frame);
-//		char key = (char)waitKey(1000/30);
-//		if (key == 'q') {
-//			break;
-//		}
-	}
-
-	Mat point_cloud = Mat::zeros(height, width, CV_32FC3);
-	uint16_t* depth_data = (uint16_t*)depthVec[0].data;
-	float* xy_table_data = (float*)xy_table.data;
-	float* point_cloud_data = (float*)point_cloud.data;
-
-	int point_count(0);
-	for (int y=0, idx=0; y<height; y++) {
-		for (int x=0; x<width; x++, idx++) {
-			int channel = y * width * 3 + x * 3;
-			if (depth_data[idx] != 0 && !isnan(xy_table_data[idx*2]) && !isnan(xy_table_data[idx*2+1]) )
-			{
-				float X = xy_table_data[idx*2]     * depth_data[idx];
-				float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
-				float Z = depth_data[idx];
-				float p[3] = {X,Y,Z};
-
-				point_cloud_data[channel + 0] = xy_table_data[idx*2]     * depth_data[idx];// + calib_point[0];
-				point_cloud_data[channel + 1] = xy_table_data[idx*2 + 1] * depth_data[idx];// + calib_point[1];
-				point_cloud_data[channel + 2] = depth_data[idx];// + calib_point[2];
-				point_count++;
-			}
-			else
-			{
-				point_cloud_data[channel + 0] = nanf("");
-				point_cloud_data[channel + 1] = nanf("");
-				point_cloud_data[channel + 2] = nanf("");
-			}
-		}
-	}
-
-	string file_name = "rec.ply";
-    // save to the ply file
-    std::ofstream ofs(file_name); // text mode first
-    ofs << "ply" << std::endl;
-    ofs << "format ascii 1.0" << std::endl;
-    ofs << "element vertex "  << point_count << std::endl;
-    ofs << "property float x" << std::endl;
-    ofs << "property float y" << std::endl;
-    ofs << "property float z" << std::endl;
-    ofs << "end_header" << std::endl;
-    ofs.close();
-
-    std::stringstream ss;
-    for (int y=0, idx=0; y<height; y++) {
-		for (int x=0; x<width; x++, idx++) {
-			int channel = y * width * 3 + x * 3;
-			if (isnan(point_cloud_data[channel + 0]) || isnan(point_cloud_data[channel + 1]) || isnan(point_cloud_data[channel + 2]) )
-			{
-				continue;
-			}
-			ss << (float)point_cloud_data[channel + 0] << " "
-			   << (float)point_cloud_data[channel + 1] << " "
-			   << (float)point_cloud_data[channel + 2] << std::endl;
-		}
-    }
-    std::ofstream ofs_text(file_name, std::ios::out | std::ios::app);
-    ofs_text.write(ss.str().c_str(), (std::streamsize)ss.str().length());
-
-	rec_timer.stop();
-	cout << "Frame #: " << colorVec.size() << endl;
-	cout << "Reading time: " << rec_timer.time() << endl;
-
-//	system("rm ./record/*.png");
-
-	exit(0);
-
-	return point_cloud;
-}
+pair<Quaternionf, Vector3f> ReadCharucoData(string fileName);
 
 void PrintUsage()
 {
-    cout << "<Usage>" << endl;
-    cout << "./table_tracker" << endl;
-    cout << "./table_tracker -sync [outputfile]" << endl;
+    cout << ">> Usage" << endl;
+    cout << "  ./table_tracker" << endl;
+    cout << "  ./table_tracker -sync [outputfile]" << endl;
 }
 
 int main(int argc, char** argv)
 {
-//	ContouringColorImg();
-
 	PrintUsage();
 	if(argc > 1 && string(argv[1])=="-sync") return CHARUCO_SYNC(argc,argv);
 
-	auto qtData = ReadCharucoData("worldXYZ.txt");
+	auto qtData = ReadCharucoData("kinect");
 
 	// Read OCR data
 	cv::Vec3d ocrDat(0,0,0); // lat, long, height
@@ -165,96 +40,91 @@ int main(int argc, char** argv)
 	VERIFY(k4a_device_get_calibration(device, deviceConfig.depth_mode, deviceConfig.color_resolution, &sensorCalibration),
 		   "Get depth camera calibration failed!");
 
-	int depthWidth = sensorCalibration.depth_camera_calibration.resolution_width;
-	int depthHeight = sensorCalibration.depth_camera_calibration.resolution_height;
+	k4a_capture_t sensorCapture = NULL;
+	k4a_image_t color_img = NULL;
+	k4a_image_t depth_img = NULL;
+	k4a_image_t point_img = NULL;
+	k4a_image_t colorlike_depth_img = NULL;
+	k4a_transformation_t k4aTransform = NULL;
+	k4aTransform = k4a_transformation_create(&sensorCalibration);
 
-	Mat xy_table = create_xy_table(sensorCalibration);
-
-//	Read_K4A_MKV_Record("rec0610.mkv", xy_table);
-
-	k4a_capture_t sensorCapture = nullptr;
-	k4a_image_t color_img = nullptr;
-	k4a_image_t depth_img = nullptr;
-	Mat color_mat, depth_mat, color_resize;
-
+	Mat xy_table = create_color_xy_table(sensorCalibration);
 	TableTracker tableTracker(xy_table, qtData.first, qtData.second);
 
-	int gCount(0);
+	//	tableTracker.Read_K4A_MKV_Record("rec0610.mkv", xy_table);
+
 	bool isCenter(false);
+	cout << ">> Main Loop Start" << endl;
 	while(1)
 	{
 		k4a_device_get_capture(device, &sensorCapture, 1000);
 		color_img = k4a_capture_get_color_image(sensorCapture);
 		depth_img = k4a_capture_get_depth_image(sensorCapture);
+		point_img = create_point_cloud_based(color_img);
+		colorlike_depth_img = create_depth_image_like(color_img);
+		k4a_transformation_depth_image_to_color_camera(k4aTransform, depth_img, colorlike_depth_img);
+		k4a_transformation_depth_image_to_point_cloud(k4aTransform, colorlike_depth_img, K4A_CALIBRATION_TYPE_COLOR, point_img);
 
-		color_mat = color_to_opencv(color_img);
-		depth_mat = depth_to_opencv(depth_img);
-
-		k4a_image_release(color_img);
-		k4a_image_release(depth_img);
-		k4a_capture_release(sensorCapture);
-
-		if (!isCenter)
+		tableTracker.SetNewImage(color_img, point_img);
+		if(!isCenter)
 		{
-			tableTracker.SetNewFrame(color_mat, depth_mat);
-			isCenter = tableTracker.CalibrateTableCenter();
-
-
+			isCenter = tableTracker.FindTableCenter();
 		}
 		else
 		{
-			tableTracker.SetNewFrame(color_mat, depth_mat);
-			tableTracker.SetTableOrigin(ocrDat(0), ocrDat(1), ocrDat(2));
+			tableTracker.TransTableOrigin(ocrDat(0), ocrDat(1), ocrDat(2));
 			tableTracker.ProcessCurrentFrame();
 			tableTracker.Render();
-
-
-			char key = (char)waitKey(1);
-			if (key == 'g') {
-				int point_count = 0;
-				cout << "Generate table point cloud" << endl;
-				string name1 = "1_Point" + to_string(gCount) + ".ply";
-				Mat point_cloud = tableTracker.GeneratePointCloud(depth_mat, xy_table, &point_count);
-				tableTracker.WritePointCloud(name1, point_cloud, point_count);
-				point_count = 0;
-				string name2 = "2_Table" + to_string(gCount) + ".ply";
-				Mat table_cloud = tableTracker.GenerateTablePointCloud(depth_mat, xy_table, &point_count);
-				tableTracker.WritePointCloud(name2, table_cloud, point_count);
-				gCount++;
-			}
-			else if (key == 's') {
-				cout <<" Set table origin " << endl;
-				float x,y,z;
-				cin >> x >> y >> z;
-				tableTracker.SetTableOrigin(x, y, z);
-			}
-			else if (key == 'q') {
-				break;
-			}
 		}
 
 
+		char key = (char)waitKey(1);
+		if (key == 'g') {
+			cout << "Generate Point Cloud Data" << endl;
 
+		}
+		else if (key == 's') {
+			cout <<" Set table origin " << endl;
+			float x,y,z;
+			cin >> x >> y >> z;
+			tableTracker.TransTableOrigin(x, y, z);
+		}
+		else if (key == 'q') {
+			break;
+		}
+
+		k4a_image_release(color_img);
+		k4a_image_release(depth_img);
+		k4a_image_release(colorlike_depth_img);
+		k4a_image_release(point_img);
+		k4a_capture_release(sensorCapture);
 	}
+
+	k4a_transformation_destroy(k4aTransform);
+	k4a_device_close(device);
+	cout << ">> EXIT_SUCCESS" << endl;
+
 	return EXIT_SUCCESS;
 }
 
 int CHARUCO_SYNC(int argc, char** argv)
 {
-	//trackin option configuration3
+	//tracking option configuration3
 	string detParm("detector_params.yml");
-	string camParm("camera2160.yml");
-	if (argc != 3) {
-		cout << "<Usage>" << endl;
-		cout << "./table_tracker -sync [outputfile]" << endl;
-	}
+	string camParm("kinect2160.yml");
 
 	// Start camera
 	k4a_device_t device = nullptr;
 	VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
 
 	// Start camera. Make sure depth camera is enabled.
-	k4a_device_configuration_t deviceConfig = get_default_config();
+	k4a_device_configuration_t deviceConfig = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
+	deviceConfig.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
+	deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_2160P;
+	deviceConfig.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
+	deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_15;
+	deviceConfig.subordinate_delay_off_master_usec = 0;
+	deviceConfig.synchronized_images_only = true;
 	VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
 
 	// Get calibration information
@@ -307,17 +177,17 @@ int CHARUCO_SYNC(int argc, char** argv)
 			sync.TickSwitch();
 	}
 	k4a_device_close(device);
-	sync.WriteTransformationData(string(argv[1]));
+	sync.WriteTransformationData(string(argv[2]));
 
 	return EXIT_SUCCESS;
 }
 
-pair<Eigen::Vector4f, Eigen::Vector3f> ReadCharucoData(string fileName)
+pair<Quaternionf, Vector3f> ReadCharucoData(string fileName)
 {
 	// Read World Coordinate
-	Eigen::Vector4f quat;
-	Eigen::Vector3f tvec;
-	ifstream ifs("worldXYZ.txt");
+	Quaternionf quat;
+	Vector3f tvec;
+	ifstream ifs(fileName);
 	string dump;
 
 	if(!ifs.is_open()) {
@@ -331,7 +201,7 @@ pair<Eigen::Vector4f, Eigen::Vector3f> ReadCharucoData(string fileName)
 		float x,y,z,w;
 		if (dump == "q") {
 			ss >> x >> y >> z >> w;
-			quat << x, y, z, w;
+			quat = Quaternionf(w,x,y,z);
 		}
 		else if (dump =="t") {
 			ss >> x >> y >> z;
@@ -340,4 +210,3 @@ pair<Eigen::Vector4f, Eigen::Vector3f> ReadCharucoData(string fileName)
 	}
 	return make_pair(quat, tvec);
 }
-

@@ -20,7 +20,7 @@ bool CharucoSync::SetParameters(string camParm, string detParam)
     fs["distortion_coefficients"] >> distCoeffs;
 
     cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
-    board = cv::aruco::CharucoBoard::create(5, 7, 30.0f, 23.5f, dictionary);
+    board = cv::aruco::CharucoBoard::create(5, 7, 0.0300f, 0.0235f, dictionary);
     params = cv::aruco::DetectorParameters::create();
 
     FileStorage fs2(detParam, FileStorage::READ);
