@@ -3,7 +3,7 @@
 Eigen::Vector4d quaternionAverage(std::vector<Eigen::Vector4d> quaternions);
 
 CharucoSync::CharucoSync()
-    : getPose(false)
+    : getPose(false), sf(1)
 {
 }
 
@@ -20,6 +20,7 @@ bool CharucoSync::SetParameters(string camParm, string detParam)
     fs["distortion_coefficients"] >> distCoeffs;
 
     cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+//    board = cv::aruco::CharucoBoard::create(5, 7, 0.0765f, 0.0535f, dictionary);
     board = cv::aruco::CharucoBoard::create(5, 7, 0.0300f, 0.0235f, dictionary);
     params = cv::aruco::DetectorParameters::create();
 
@@ -84,7 +85,7 @@ void CharucoSync::EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec)
             // if charuco pose is valid
             if (valid) {
                 cv::aruco::drawAxis(display, camMatrix, distCoeffs, rvec, tvec, 0.1f);
-				cout << rvec << " " << tvec << endl;
+//				cout << rvec << " " << tvec << endl;
             }
 
             if (getPose)
@@ -107,7 +108,7 @@ void CharucoSync::Render()
 {
     setMouseCallback("Synchronization", onMouseCropImage);
     if (clicked)
-        cv::rectangle(display, P1, P2, CV_RGB(255, 255, 0), 3);
+    	cv::rectangle(display, P1, P2, CV_RGB(255, 255, 0), 3);
     else if (cropRect.width > 0){
         imshow("crop img.", display(cropRect));
         cv::rectangle(display, cropRect, CV_RGB(255, 255, 0), 3);

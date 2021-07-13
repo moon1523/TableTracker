@@ -33,9 +33,10 @@ TableTracker::TableTracker(Mat xy_table, Quaternionf _quat, Vector3f _tvec)
 	long_pos = 0;
 	top_margin = 50;
 	bot_margin = 50;
-	tableCenter = Point2i(width*0.5, height*0.5);
+	tableCenter = Point2i(width*0.5, height*0.5 - long_pos);
 	deg = 1;
 	transX = 0, transY = 0;
+	sfInv = 1.;
 
 	Vector3f axisX = VectorRotatedByQuaternion(Vector3f(1,0,0), Quaternionf(quat));
 	Vector3f axisY = VectorRotatedByQuaternion(Vector3f(0,1,0), Quaternionf(quat));
@@ -45,7 +46,7 @@ TableTracker::TableTracker(Mat xy_table, Quaternionf _quat, Vector3f _tvec)
 	cout << "  Origin: " << tvec(0) << " " << tvec(1) << " " << tvec(2) << endl;
 	cout << "  axis-X: " << axisX(0) << " " << axisX(1) << " " << axisX(2) << endl;
 	cout << "  axis-Y: " << axisY(0) << " " << axisY(1) << " " << axisY(2) << endl;
-	cout << "  axis-Z: " << axisZ(0) << " " << axisZ(1) << " " << axisZ(2) << endl;
+	cout << "  axis-Z: " << axisZ(0) << " " << axisZ(1) << " " << axisZ(2) << endl << endl;
 
 	for (int i=0; i<3; i++) {
 		world_origin[i] = tvec(i) * 10;
@@ -422,26 +423,25 @@ vector<Mat> TableTracker::GenerateTableMask(Mat xy_table, int deg)
 	cv::Mat mask = cv::Mat::zeros(height, width, CV_8UC1);
 	uchar* mask_data = (uchar*)mask.data;
 
-	int mask_sum(0);
-
 	int yMin = isCenter? tableCenter.y - y_nodeTop : height*0.5-y_nodeTop;
 	int yMax = isCenter? tableCenter.y + y_nodeBot : height*0.5+y_nodeBot;
 	int xMin = isCenter? tableCenter.x - x_node : width*0.5-x_node;
 	int xMax = isCenter? tableCenter.x + x_node : width*0.5+x_node;
 
+	vector<cv::Mat> maskVec;
+
 	for (int y=yMin; y<yMax; y++) {
 		for (int x=xMin; x<xMax; x++) {
 			mask_data[y*width+x] = 255;
-			mask_sum += mask_data[y*width+x];
 		}
 	}
 
-	vector<cv::Mat> maskVec;
+	// Rotate the mask
 	for (int i=0; i<=90/deg; i++)
 	{
 		cv::Mat mask_rot, rotM;
 		mask.copyTo(mask_rot);
-		if(!isCenter) rotM = getRotationMatrix2D(Point(width*0.5, height*0.5), -deg*i, 1.0);
+		if(!isCenter) rotM = getRotationMatrix2D(Point(width*0.5, height*0.5 - long_pos), -deg*i, 1.0);
 		else          rotM = getRotationMatrix2D(Point(tableCenter.x, tableCenter.y), -deg*i, 1.0);
 		warpAffine(mask, mask_rot, rotM, mask.size());
 		maskVec.push_back(mask_rot);
@@ -475,78 +475,81 @@ vector<Mat> TableTracker::GenerateTableMask(Mat xy_table, int deg)
 
 vector<Mat> TableTracker::Read_K4A_MKV_Record(string fileName, Mat xy_table)
 {
-	Timer rec_timer;
-	rec_timer.start();
-	VideoCapture vcap(fileName);
-	if ( !vcap.isOpened() )
-		cerr << "Fail to read video record" << endl;
 
-	Mat color_frame, depth_frame;
-	vector<Mat> colorVec, depthVec;
 
-	while(1)
-	{
-		vcap >> color_frame;
-		if (color_frame.empty()) break;
-		colorVec.push_back(color_frame);
-	}
 
-	// https://docs.microsoft.com/en-us/azure/kinect-dk/record-file-format
-	// -map 0:1 (depth)
-	// -map 0:0 (color)
-	// -vsync 0 (match frame rate)
-	system(("ffmpeg -i " + fileName + " -map 0:1 -vsync 0 ./record/depth%d.png").c_str());
-
+//	Timer rec_timer;
+//	rec_timer.start();
+//	VideoCapture vcap(fileName);
+//	if ( !vcap.isOpened() )
+//		cerr << "Fail to read video record" << endl;
+//
+//	Mat color_frame, depth_frame;
+//	vector<Mat> colorVec, depthVec;
+//
+//	while(1)
+//	{
+//		vcap >> color_frame;
+//		if (color_frame.empty()) break;
+//		colorVec.push_back(color_frame);
+//	}
+//
+//	// https://docs.microsoft.com/en-us/azure/kinect-dk/record-file-format
+//	// -map 0:1 (depth)
+//	// -map 0:0 (color)
+//	// -vsync 0 (match frame rate)
+//	system(("ffmpeg -i " + fileName + " -map 0:1 -vsync 0 ./record/depth%d.png").c_str());
+//
 	vector<Mat> point_cloud_vec;
-	for (size_t i=0; i<colorVec.size(); i++) {
-		string depthFile = "./record/depth" + to_string(i+1) + ".png";
-		depth_frame = imread(depthFile, IMREAD_ANYDEPTH );
-		depthVec.push_back(depth_frame);
-//		imshow("depth", depth_frame);
-//		char key = (char)waitKey(1000/30);
-//		if (key == 'q') {
-//			break;
+//	for (size_t i=0; i<colorVec.size(); i++) {
+//		string depthFile = "./record/depth" + to_string(i+1) + ".png";
+//		depth_frame = imread(depthFile, IMREAD_ANYDEPTH );
+//		depthVec.push_back(depth_frame);
+////		imshow("depth", depth_frame);
+////		char key = (char)waitKey(1000/30);
+////		if (key == 'q') {
+////			break;
+////		}
+//
+//		Mat point_cloud = Mat::zeros(height, width, CV_32FC3);
+//		float* xy_table_data = (float*)xy_table.data;
+//		float* point_cloud_data = (float*)point_cloud.data;
+//		uint16_t* depth_data = (uint16_t*)depthVec[i].data;
+//
+//		int point_count(0);
+//		for (int y=0, idx=0; y<height; y++) {
+//			for (int x=0; x<width; x++, idx++) {
+//				int channel = y * width * 3 + x * 3;
+//				if (depth_data[idx] != 0 && !isnan(xy_table_data[idx*2]) && !isnan(xy_table_data[idx*2+1]) )
+//				{
+//					float X = xy_table_data[idx*2]     * depth_data[idx];
+//					float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
+//					float Z = depth_data[idx];
+//					float p[3] = {X,Y,Z};
+//
+//						point_cloud_data[channel + 0] = xy_table_data[idx*2]     * depth_data[idx];// + calib_point[0];
+//						point_cloud_data[channel + 1] = xy_table_data[idx*2 + 1] * depth_data[idx];// + calib_point[1];
+//						point_cloud_data[channel + 2] = depth_data[idx];// + calib_point[2];
+//						point_count++;
+//				}
+//				else
+//				{
+//					point_cloud_data[channel + 0] = nanf("");
+//					point_cloud_data[channel + 1] = nanf("");
+//					point_cloud_data[channel + 2] = nanf("");
+//				}
+//			}
 //		}
-
-		Mat point_cloud = Mat::zeros(height, width, CV_32FC3);
-		float* xy_table_data = (float*)xy_table.data;
-		float* point_cloud_data = (float*)point_cloud.data;
-		uint16_t* depth_data = (uint16_t*)depthVec[i].data;
-
-		int point_count(0);
-		for (int y=0, idx=0; y<height; y++) {
-			for (int x=0; x<width; x++, idx++) {
-				int channel = y * width * 3 + x * 3;
-				if (depth_data[idx] != 0 && !isnan(xy_table_data[idx*2]) && !isnan(xy_table_data[idx*2+1]) )
-				{
-					float X = xy_table_data[idx*2]     * depth_data[idx];
-					float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
-					float Z = depth_data[idx];
-					float p[3] = {X,Y,Z};
-
-						point_cloud_data[channel + 0] = xy_table_data[idx*2]     * depth_data[idx];// + calib_point[0];
-						point_cloud_data[channel + 1] = xy_table_data[idx*2 + 1] * depth_data[idx];// + calib_point[1];
-						point_cloud_data[channel + 2] = depth_data[idx];// + calib_point[2];
-						point_count++;
-				}
-				else
-				{
-					point_cloud_data[channel + 0] = nanf("");
-					point_cloud_data[channel + 1] = nanf("");
-					point_cloud_data[channel + 2] = nanf("");
-				}
-			}
-		}
-		point_cloud_vec.push_back(point_cloud);
-	}
-
-	rec_timer.stop();
-	cout << "Frame #: " << colorVec.size() << endl;
-	cout << "Reading time: " << rec_timer.time() << endl;
-
-	system("rm ./record/*.png");
-
-	exit(0);
+//		point_cloud_vec.push_back(point_cloud);
+//	}
+//
+//	rec_timer.stop();
+//	cout << "Frame #: " << colorVec.size() << endl;
+//	cout << "Reading time: " << rec_timer.time() << endl;
+//
+//	system("rm ./record/*.png");
+//
+//	exit(0);
 
 	return point_cloud_vec;
 }
@@ -557,21 +560,21 @@ void onMouseCropImage(int event, int x, int y, int f, void *param)
     {
     case EVENT_LBUTTONDOWN:
         clicked = true;
-        P1.x = x;
-        P1.y = y;
-        P2.x = x;
-        P2.y = y;
+        P1.x = x * sfInv;
+        P1.y = y * sfInv;
+        P2.x = x * sfInv;
+        P2.y = y * sfInv;
         break;
     case EVENT_LBUTTONUP:
-        P2.x = x;
-        P2.y = y;
+        P2.x = x * sfInv;
+        P2.y = y * sfInv;
         clicked = false;
         break;
     case EVENT_MOUSEMOVE:
         if (clicked)
         {
-            P2.x = x;
-            P2.y = y;
+            P2.x = x * sfInv;
+            P2.y = y * sfInv;
         }
         break;
     case EVENT_RBUTTONUP:

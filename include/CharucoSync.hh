@@ -37,7 +37,7 @@ class CharucoSync
     Mat camMatrix;
     Mat distCoeffs;
     bool getPose;
-    Mat display;
+    Mat display, display_resize;
     float sf;
 
     //avg values

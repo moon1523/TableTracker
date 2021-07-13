@@ -9,10 +9,15 @@
 #include <limits>
 
 #include <k4a/k4a.hpp>
+#include <k4arecord/playback.h>
+#include <Utilities.h>
+#include <turbojpeg.h>
+
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
+
 
 using namespace std;
 
@@ -302,111 +307,446 @@ static bool point_cloud_depth_to_color(k4a_transformation_t transformation_handl
     return true;
 }
 
-
-Mat Read_K4A_MKV_Record(string fileName, Mat xy_table)
+static bool point_cloud_depth_to_color(k4a_transformation_t transformation_handle,
+                                       const k4a_image_t depth_image,
+                                       const k4a_image_t color_image,
+									   string file_name)
 {
-	int width = xy_table.cols;
-	int height = xy_table.rows;
+    // transform color image into depth camera geometry
+    int color_image_width_pixels = k4a_image_get_width_pixels(color_image);
+    int color_image_height_pixels = k4a_image_get_height_pixels(color_image);
 
-	Timer rec_timer;
-	rec_timer.start();
-	VideoCapture vcap(fileName);
-	if ( !vcap.isOpened() )
-		cerr << "Fail to read video record" << endl;
-
-	Mat color_frame, depth_frame;
-	vector<Mat> colorVec, depthVec;
-
-	while(1)
-	{
-		vcap >> color_frame;
-		if (color_frame.empty()) break;
-		colorVec.push_back(color_frame);
-	}
-
-//	system(("ffmpeg -i " + fileName + " -map 0:1 -vsync 0 ./record/depth%d.png").c_str());
-
-	cout << colorVec.size() << endl;
-
-	for (size_t i=1; i<=colorVec.size(); i++) {
-		string depthFile = "./record/depth" + to_string(i) + ".png";
-		depth_frame = imread(depthFile, IMREAD_ANYDEPTH );
-		depthVec.push_back(depth_frame);
-//		imshow("depth", depth_frame);
-//		char key = (char)waitKey(1000/30);
-//		if (key == 'q') {
-//			break;
-//		}
-	}
-
-	Mat point_cloud = Mat::zeros(height, width, CV_32FC3);
-	uint16_t* depth_data = (uint16_t*)depthVec[0].data;
-	float* xy_table_data = (float*)xy_table.data;
-	float* point_cloud_data = (float*)point_cloud.data;
-
-	int point_count(0);
-	for (int y=0, idx=0; y<height; y++) {
-		for (int x=0; x<width; x++, idx++) {
-			int channel = y * width * 3 + x * 3;
-			if (depth_data[idx] != 0 && !isnan(xy_table_data[idx*2]) && !isnan(xy_table_data[idx*2+1]) )
-			{
-				float X = xy_table_data[idx*2]     * depth_data[idx];
-				float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
-				float Z = depth_data[idx];
-				float p[3] = {X,Y,Z};
-
-				point_cloud_data[channel + 0] = xy_table_data[idx*2]     * depth_data[idx];// + calib_point[0];
-				point_cloud_data[channel + 1] = xy_table_data[idx*2 + 1] * depth_data[idx];// + calib_point[1];
-				point_cloud_data[channel + 2] = depth_data[idx];// + calib_point[2];
-				point_count++;
-			}
-			else
-			{
-				point_cloud_data[channel + 0] = nanf("");
-				point_cloud_data[channel + 1] = nanf("");
-				point_cloud_data[channel + 2] = nanf("");
-			}
-		}
-	}
-
-	string file_name = "rec.ply";
-    // save to the ply file
-    std::ofstream ofs(file_name); // text mode first
-    ofs << "ply" << std::endl;
-    ofs << "format ascii 1.0" << std::endl;
-    ofs << "element vertex "  << point_count << std::endl;
-    ofs << "property float x" << std::endl;
-    ofs << "property float y" << std::endl;
-    ofs << "property float z" << std::endl;
-    ofs << "end_header" << std::endl;
-    ofs.close();
-
-    std::stringstream ss;
-    for (int y=0, idx=0; y<height; y++) {
-		for (int x=0; x<width; x++, idx++) {
-			int channel = y * width * 3 + x * 3;
-			if (isnan(point_cloud_data[channel + 0]) || isnan(point_cloud_data[channel + 1]) || isnan(point_cloud_data[channel + 2]) )
-			{
-				continue;
-			}
-			ss << (float)point_cloud_data[channel + 0] << " "
-			   << (float)point_cloud_data[channel + 1] << " "
-			   << (float)point_cloud_data[channel + 2] << std::endl;
-		}
+    k4a_image_t transformed_depth_image = NULL;
+    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16,
+                                                 color_image_width_pixels,
+                                                 color_image_height_pixels,
+                                                 color_image_width_pixels * (int)sizeof(uint16_t),
+                                                 &transformed_depth_image))
+    {
+        printf("Failed to create transformed depth image\n");
+        return false;
     }
-    std::ofstream ofs_text(file_name, std::ios::out | std::ios::app);
-    ofs_text.write(ss.str().c_str(), (std::streamsize)ss.str().length());
 
-	rec_timer.stop();
-	cout << "Frame #: " << colorVec.size() << endl;
-	cout << "Reading time: " << rec_timer.time() << endl;
+    k4a_image_t point_cloud_image = NULL;
+    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
+                                                 color_image_width_pixels,
+                                                 color_image_height_pixels,
+                                                 color_image_width_pixels * 3 * (int)sizeof(int16_t),
+                                                 &point_cloud_image))
+    {
+        printf("Failed to create point cloud image\n");
+        return false;
+    }
 
-//	system("rm ./record/*.png");
+    if (K4A_RESULT_SUCCEEDED !=
+        k4a_transformation_depth_image_to_color_camera(transformation_handle, depth_image, transformed_depth_image))
+    {
+        printf("Failed to compute transformed depth image\n");
+        return false;
+    }
 
-	exit(0);
+    if (K4A_RESULT_SUCCEEDED != k4a_transformation_depth_image_to_point_cloud(transformation_handle,
+                                                                              transformed_depth_image,
+                                                                              K4A_CALIBRATION_TYPE_COLOR,
+                                                                              point_cloud_image))
+    {
+        printf("Failed to compute point cloud\n");
+        return false;
+    }
 
-	return point_cloud;
+    tranformation_helpers_write_point_cloud(point_cloud_image, color_image, file_name.c_str());
+
+    k4a_image_release(transformed_depth_image);
+    k4a_image_release(point_cloud_image);
+
+    return true;
+}
+
+pair<Quaternionf, Vector3f> ReadCharucoData(string fileName)
+{
+	// Read World Coordinate
+	Quaternionf quat;
+	Vector3f tvec;
+	ifstream ifs(fileName);
+	string dump;
+
+	if(!ifs.is_open()) {
+		cerr << "fail to read" << endl;
+		exit(1);
+	}
+
+	while(getline(ifs,dump)) {
+		stringstream ss(dump);
+		ss >> dump;
+		float x,y,z,w;
+		if (dump == "q") {
+			ss >> x >> y >> z >> w;
+			quat = Quaternionf(w,x,y,z);
+		}
+		else if (dump =="t") {
+			ss >> x >> y >> z;
+			tvec << x, y, z;
+		}
+	}
+	return make_pair(quat, tvec);
+}
+
+int CHARUCO_SYNC(int argc, char** argv)
+{
+	//tracking option configuration3
+	string detParm("detector_params.yml");
+	string camParm("kinect2160.yml");
+
+	// Start camera
+	k4a_device_t device = nullptr;
+	VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
+
+	// Start camera. Make sure depth camera is enabled.
+	k4a_device_configuration_t deviceConfig = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
+	deviceConfig.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
+	deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_2160P;
+	deviceConfig.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED; // No need for depth during calibration
+	deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_15;     // Don't use all USB bandwidth
+	VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
+
+	// Get calibration information
+	k4a_calibration_t sensorCalibration;
+	VERIFY(k4a_device_get_calibration(device, deviceConfig.depth_mode, deviceConfig.color_resolution, &sensorCalibration),
+		   "Get depth camera calibration failed!");
+//	int depthWidth = sensorCalibration.depth_camera_calibration.resolution_width;
+//	int depthHeight = sensorCalibration.depth_camera_calibration.resolution_height;
+
+	// Synchronization
+	CharucoSync sync;
+	sync.SetParameters(camParm, detParm);
+	sync.SetScalingFactor(0.4f);
+	bool getData(false);
+	waitKey(1000);
+	while (1)
+	{
+		k4a_capture_t sensorCapture = nullptr;
+		k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
+
+		if (getCaptureResult == K4A_WAIT_RESULT_FAILED)
+		{
+			std::cout << "Get img capture returned error: " << getCaptureResult << std::endl;
+			break;
+		}
+		else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
+			continue;
+
+		Mat color;
+		Vec3d rvec, tvec;
+		k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
+		color = color_to_opencv(color_img);
+		k4a_image_release(color_img);
+		k4a_capture_release(sensorCapture);
+		sync.EstimatePose(color, rvec, tvec);
+
+		sync.Render();
+		char key = waitKey(1);
+		if (key == 'q')
+			break;
+		else if (key == 'a')
+		{
+			sync.ShowAvgValue(color);
+			char key2 = waitKey(0);
+			if(key2=='q') break;
+		}
+		else if (key == 'c')
+			sync.ClearData();
+		else if (key == 'g')
+			sync.TickSwitch();
+	}
+	k4a_device_close(device);
+	sync.WriteTransformationData(string(argv[2]));
+
+	return EXIT_SUCCESS;
+}
+
+int PLAYBACK_RECORD_CHARUCO_SYNC(char* fileName)
+{
+	cout << ">> Playback Record CHARUCO_SYNC" << endl;
+	int timestamp = 1000;
+	k4a_playback_t playback = NULL;
+	k4a_calibration_t sensorCalibration;
+	k4a_transformation_t transformation = NULL;
+	k4a_capture_t capture = NULL;
+	k4a_image_t color_image = NULL;
+	k4a_image_t uncompressed_color_image = NULL;
+
+	k4a_result_t result;
+	k4a_stream_result_t stream_result;
+
+	result = k4a_playback_open(fileName, &playback);
+	if (result != K4A_RESULT_SUCCEEDED || playback == NULL) {
+		printf("Failed to open recording %s\n", fileName); exit(1);
+	}
+
+	result = k4a_playback_seek_timestamp(playback, timestamp * 1000, K4A_PLAYBACK_SEEK_BEGIN);
+	if (result != K4A_RESULT_SUCCEEDED)	{
+		printf("Failed to seek timestamp %d\n", timestamp); exit(1);
+	}
+	printf("   Seeking to timestamp: %d/%d (ms)\n",
+		   timestamp,
+		   (int)(k4a_playback_get_recording_length_usec(playback) / 1000));
+
+	if (K4A_RESULT_SUCCEEDED != k4a_playback_get_calibration(playback, &sensorCalibration)) {
+		printf("Failed to get calibration\n"); exit(1);
+	}
+	cout << "   Record Length (s): " << (k4a_playback_get_recording_length_usec(playback) / (float)1000000) << endl;
+	transformation = k4a_transformation_create(&sensorCalibration);
+	cout << "   Color resolution: " << sensorCalibration.color_camera_calibration.resolution_width << " x "
+								    << sensorCalibration.color_camera_calibration.resolution_height << endl;
+	cout << "   Depth resolution: " << sensorCalibration.depth_camera_calibration.resolution_width << " x "
+								    << sensorCalibration.depth_camera_calibration.resolution_height << endl << endl;
+
+	//tracking option configuration3
+	string detParm("detector_params.yml");
+	string camParm("kinect2160.yml");
+
+	// Synchronization
+	CharucoSync sync;
+	sync.SetParameters(camParm, detParm);
+	sync.SetScalingFactor(0.4f);
+	bool getData(false);
+	waitKey(1000);
+	while (1)
+	{
+		stream_result = k4a_playback_get_next_capture(playback, &capture);
+		if (stream_result == K4A_STREAM_RESULT_EOF) {
+			cout << "   Last capture" << endl; break;
+		}
+		color_image = k4a_capture_get_color_image(capture);
+		// Convert color frame from mjpeg to bgra
+		k4a_image_format_t format;
+		format = k4a_image_get_format(color_image);
+		if (format != K4A_IMAGE_FORMAT_COLOR_MJPG) {
+			printf("Color format not supported. Please use MJPEG\n"); exit(1);
+		}
+
+		int color_width, color_height;
+		color_width = k4a_image_get_width_pixels(color_image);
+		color_height = k4a_image_get_height_pixels(color_image);
+
+		if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_COLOR_BGRA32,
+													 color_width,
+													 color_height,
+													 color_width * 4 * (int)sizeof(uint8_t),
+													 &uncompressed_color_image))
+		{
+			printf("Failed to create image buffer\n"); exit(1);
+		}
+
+		tjhandle tjHandle;
+		tjHandle = tjInitDecompress();
+		if (tjDecompress2(tjHandle,
+						  k4a_image_get_buffer(color_image),
+						  static_cast<unsigned long>(k4a_image_get_size(color_image)),
+						  k4a_image_get_buffer(uncompressed_color_image),
+						  color_width,
+						  0, // pitch
+						  color_height,
+						  TJPF_BGRA,
+						  TJFLAG_FASTDCT | TJFLAG_FASTUPSAMPLE) != 0)
+		{
+			printf("Failed to decompress color frame\n");
+			if (tjDestroy(tjHandle))
+			{
+				printf("Failed to destroy turboJPEG handle\n");
+			}
+			exit(1);
+		}
+		if (tjDestroy(tjHandle))
+		{
+			printf("Failed to destroy turboJPEG handle\n");
+		}
+
+
+		Mat color;
+		Vec3d rvec, tvec;
+		color = color_to_opencv(uncompressed_color_image);
+		k4a_image_release(uncompressed_color_image);
+		k4a_capture_release(capture);
+		sync.EstimatePose(color, rvec, tvec);
+
+		sync.Render();
+		char key = waitKey(1);
+		if (key == 'q')
+			break;
+		else if (key == 'a')
+		{
+			sync.ShowAvgValue(color);
+			char key2 = waitKey(0);
+			if(key2=='q') break;
+		}
+		else if (key == 'c')
+			sync.ClearData();
+		else if (key == 'g')
+			sync.TickSwitch();
+	}
+	k4a_playback_close(playback);
+	sync.WriteTransformationData("test");
+
+	return EXIT_SUCCESS;
 }
 
 
 
+int PLAYBACK_RECORD(char* fileName)
+{
+	cout << ">> Playback Record" << endl;
+	int timestamp = 1000;
+	k4a_playback_t playback = NULL;
+	k4a_calibration_t calibration;
+	k4a_transformation_t transformation = NULL;
+	k4a_capture_t capture = NULL;
+	k4a_image_t depth_image = NULL;
+	k4a_image_t color_image = NULL;
+	k4a_image_t point_image = NULL;
+	k4a_image_t uncompressed_color_image = NULL;
+	k4a_image_t colorlike_depth_image = NULL;
+
+	k4a_result_t result;
+	k4a_stream_result_t stream_result;
+
+	result = k4a_playback_open(fileName, &playback);
+	if (result != K4A_RESULT_SUCCEEDED || playback == NULL) {
+		printf("Failed to open recording %s\n", fileName); exit(1);
+	}
+
+	result = k4a_playback_seek_timestamp(playback, timestamp * 1000, K4A_PLAYBACK_SEEK_BEGIN);
+	if (result != K4A_RESULT_SUCCEEDED)	{
+		printf("Failed to seek timestamp %d\n", timestamp); exit(1);
+	}
+	printf("   Seeking to timestamp: %d/%d (ms)\n",
+		   timestamp,
+		   (int)(k4a_playback_get_recording_length_usec(playback) / 1000));
+
+	if (K4A_RESULT_SUCCEEDED != k4a_playback_get_calibration(playback, &calibration)) {
+		printf("Failed to get calibration\n"); exit(1);
+	}
+	cout << "   Record Length (s): " << (k4a_playback_get_recording_length_usec(playback) / (float)1000000) << endl;
+	transformation = k4a_transformation_create(&calibration);
+	cout << "   Color resolution: " << calibration.color_camera_calibration.resolution_width << " x "
+								 << calibration.color_camera_calibration.resolution_height << endl;
+	cout << "   Depth resolution: " << calibration.depth_camera_calibration.resolution_width << " x "
+								 << calibration.depth_camera_calibration.resolution_height << endl << endl;
+
+
+	auto qtData = ReadCharucoData("kinect");
+	Mat xy_table = create_color_xy_table(calibration);
+	TableTracker tableTracker(xy_table, qtData.first, qtData.second);
+	cv::Vec3d ocrDat(0,0,0); // lat, long, height
+
+	bool isCenter(false);
+	cout << ">> Stream loop start !!" << endl;
+	while(1)
+	{
+		stream_result = k4a_playback_get_next_capture(playback, &capture);
+
+		if (stream_result == K4A_STREAM_RESULT_EOF) {
+			cout << "   Last capture" << endl;
+			result = k4a_playback_seek_timestamp(playback, timestamp * 1000, K4A_PLAYBACK_SEEK_BEGIN);
+		}
+		// Fetch frame
+		depth_image = k4a_capture_get_depth_image(capture);
+		color_image = k4a_capture_get_color_image(capture);
+
+		// Convert color frame from mjpeg to bgra
+		k4a_image_format_t format;
+		format = k4a_image_get_format(color_image);
+		if (format != K4A_IMAGE_FORMAT_COLOR_MJPG) {
+			printf("Color format not supported. Please use MJPEG\n"); exit(1);
+		}
+
+		int color_width, color_height;
+		color_width = k4a_image_get_width_pixels(color_image);
+		color_height = k4a_image_get_height_pixels(color_image);
+
+		if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_COLOR_BGRA32,
+													 color_width,
+													 color_height,
+													 color_width * 4 * (int)sizeof(uint8_t),
+													 &uncompressed_color_image))
+		{
+			printf("Failed to create image buffer\n"); exit(1);
+		}
+
+		tjhandle tjHandle;
+		tjHandle = tjInitDecompress();
+		if (tjDecompress2(tjHandle,
+						  k4a_image_get_buffer(color_image),
+						  static_cast<unsigned long>(k4a_image_get_size(color_image)),
+						  k4a_image_get_buffer(uncompressed_color_image),
+						  color_width,
+						  0, // pitch
+						  color_height,
+						  TJPF_BGRA,
+						  TJFLAG_FASTDCT | TJFLAG_FASTUPSAMPLE) != 0)
+		{
+			printf("Failed to decompress color frame\n");
+			if (tjDestroy(tjHandle))
+			{
+				printf("Failed to destroy turboJPEG handle\n");
+			}
+			exit(1);
+		}
+		if (tjDestroy(tjHandle))
+		{
+			printf("Failed to destroy turboJPEG handle\n");
+		}
+
+		// Compute color point cloud by warping depth image into color camera geometry
+//		string outFile = "./plytest/pcd"+to_string(idx++) + ".ply";
+//		cout << outFile << endl;
+//		if (point_cloud_depth_to_color(transformation, depth_image, uncompressed_color_image, outFile) == false)
+//		{
+//			printf("Failed to transform depth to color\n");
+//			exit(1);
+//		}
+
+		point_image = create_point_cloud_based(uncompressed_color_image);
+		colorlike_depth_image = create_depth_image_like(uncompressed_color_image);
+		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
+		k4a_transformation_depth_image_to_point_cloud(transformation, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
+
+		tableTracker.SetNewImage(uncompressed_color_image, point_image);
+		if(!isCenter)
+		{
+			isCenter = tableTracker.FindTableCenter();
+		}
+		else
+		{
+			tableTracker.TransTableOrigin(ocrDat(0), ocrDat(1), ocrDat(2));
+			tableTracker.ProcessCurrentFrame();
+			tableTracker.Render();
+		}
+
+
+		char key = (char)waitKey(1);
+		if (key == 'g') {
+			cout << "Generate Point Cloud Data" << endl;
+
+		}
+		else if (key == 's') {
+			cout <<" Set table origin " << endl;
+			float x,y,z;
+			cin >> x >> y >> z;
+			tableTracker.TransTableOrigin(x, y, z);
+		}
+		else if (key == 'q') {
+			break;
+		}
+
+		k4a_capture_release(capture);
+		k4a_image_release(color_image);
+		k4a_image_release(depth_image);
+		k4a_image_release(uncompressed_color_image);
+		k4a_image_release(point_image);
+		k4a_image_release(colorlike_depth_image);
+	}
+	k4a_playback_close(playback);
+
+	return EXIT_SUCCESS;
+}
