@@ -186,9 +186,9 @@ struct color_point_t
     uint8_t rgb[3];
 };
 
-void tranformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image,
-                                             const k4a_image_t color_image,
-                                             const char *file_name)
+void transformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image,
+                                              const k4a_image_t color_image,
+                                              const char *file_name)
 {
     std::vector<color_point_t> points;
 
@@ -354,7 +354,7 @@ static bool point_cloud_depth_to_color(k4a_transformation_t transformation_handl
         return false;
     }
 
-    tranformation_helpers_write_point_cloud(point_cloud_image, color_image, file_name.c_str());
+    transformation_helpers_write_point_cloud(point_cloud_image, color_image, file_name.c_str());
 
     k4a_image_release(transformed_depth_image);
     k4a_image_release(point_cloud_image);
@@ -404,7 +404,7 @@ int CHARUCO_SYNC(int argc, char** argv)
 	// Start camera. Make sure depth camera is enabled.
 	k4a_device_configuration_t deviceConfig = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
 	deviceConfig.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-	deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_2160P;
+	deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_3072P;
 	deviceConfig.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED; // No need for depth during calibration
 	deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_15;     // Don't use all USB bandwidth
 	VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
@@ -464,6 +464,55 @@ int CHARUCO_SYNC(int argc, char** argv)
 	return EXIT_SUCCESS;
 }
 
+k4a_image_t Convert_Color_MJPG_To_BGRA(k4a_image_t color_image)
+{
+	k4a_image_t uncompressed_color_image = NULL;
+	// Convert color frame from mjpeg to bgra
+	k4a_image_format_t format;
+	format = k4a_image_get_format(color_image);
+	if (format != K4A_IMAGE_FORMAT_COLOR_MJPG) {
+		printf("Color format not supported. Please use MJPEG\n"); exit(1);
+	}
+
+	int color_width, color_height;
+	color_width = k4a_image_get_width_pixels(color_image);
+	color_height = k4a_image_get_height_pixels(color_image);
+
+	if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_COLOR_BGRA32,
+												 color_width,
+												 color_height,
+												 color_width * 4 * (int)sizeof(uint8_t),
+												 &uncompressed_color_image))
+	{
+		printf("Failed to create image buffer\n"); exit(1);
+	}
+
+	tjhandle tjHandle;
+	tjHandle = tjInitDecompress();
+	if (tjDecompress2(tjHandle,
+					  k4a_image_get_buffer(color_image),
+					  static_cast<unsigned long>(k4a_image_get_size(color_image)),
+					  k4a_image_get_buffer(uncompressed_color_image),
+					  color_width,
+					  0, // pitch
+					  color_height,
+					  TJPF_BGRA,
+					  TJFLAG_FASTDCT | TJFLAG_FASTUPSAMPLE) != 0)
+	{
+		printf("Failed to decompress color frame\n");
+		if (tjDestroy(tjHandle))
+		{
+			printf("Failed to destroy turboJPEG handle\n");
+		}
+		exit(1);
+	}
+	if (tjDestroy(tjHandle))
+	{
+		printf("Failed to destroy turboJPEG handle\n");
+	}
+	return uncompressed_color_image;
+}
+
 int PLAYBACK_RECORD_CHARUCO_SYNC(char* fileName)
 {
 	cout << ">> Playback Record CHARUCO_SYNC" << endl;
@@ -474,6 +523,9 @@ int PLAYBACK_RECORD_CHARUCO_SYNC(char* fileName)
 	k4a_capture_t capture = NULL;
 	k4a_image_t color_image = NULL;
 	k4a_image_t uncompressed_color_image = NULL;
+	k4a_image_t depth_image = NULL;
+	k4a_image_t point_image = NULL;
+	k4a_image_t colorlike_depth_image = NULL;
 
 	k4a_result_t result;
 	k4a_stream_result_t stream_result;
@@ -503,7 +555,7 @@ int PLAYBACK_RECORD_CHARUCO_SYNC(char* fileName)
 
 	//tracking option configuration3
 	string detParm("detector_params.yml");
-	string camParm("kinect2160.yml");
+	string camParm("kinect3072.yml");
 
 	// Synchronization
 	CharucoSync sync;
@@ -518,56 +570,17 @@ int PLAYBACK_RECORD_CHARUCO_SYNC(char* fileName)
 			cout << "   Last capture" << endl; break;
 		}
 		color_image = k4a_capture_get_color_image(capture);
-		// Convert color frame from mjpeg to bgra
-		k4a_image_format_t format;
-		format = k4a_image_get_format(color_image);
-		if (format != K4A_IMAGE_FORMAT_COLOR_MJPG) {
-			printf("Color format not supported. Please use MJPEG\n"); exit(1);
-		}
-
-		int color_width, color_height;
-		color_width = k4a_image_get_width_pixels(color_image);
-		color_height = k4a_image_get_height_pixels(color_image);
-
-		if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_COLOR_BGRA32,
-													 color_width,
-													 color_height,
-													 color_width * 4 * (int)sizeof(uint8_t),
-													 &uncompressed_color_image))
-		{
-			printf("Failed to create image buffer\n"); exit(1);
-		}
-
-		tjhandle tjHandle;
-		tjHandle = tjInitDecompress();
-		if (tjDecompress2(tjHandle,
-						  k4a_image_get_buffer(color_image),
-						  static_cast<unsigned long>(k4a_image_get_size(color_image)),
-						  k4a_image_get_buffer(uncompressed_color_image),
-						  color_width,
-						  0, // pitch
-						  color_height,
-						  TJPF_BGRA,
-						  TJFLAG_FASTDCT | TJFLAG_FASTUPSAMPLE) != 0)
-		{
-			printf("Failed to decompress color frame\n");
-			if (tjDestroy(tjHandle))
-			{
-				printf("Failed to destroy turboJPEG handle\n");
-			}
-			exit(1);
-		}
-		if (tjDestroy(tjHandle))
-		{
-			printf("Failed to destroy turboJPEG handle\n");
-		}
-
+		uncompressed_color_image = Convert_Color_MJPG_To_BGRA(color_image);
+		depth_image = k4a_capture_get_depth_image(capture);
+		point_image = create_point_cloud_based(uncompressed_color_image);
+		colorlike_depth_image = create_depth_image_like(uncompressed_color_image);
+		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
+		k4a_transformation_depth_image_to_point_cloud(transformation, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
 
 		Mat color;
 		Vec3d rvec, tvec;
 		color = color_to_opencv(uncompressed_color_image);
-		k4a_image_release(uncompressed_color_image);
-		k4a_capture_release(capture);
+
 		sync.EstimatePose(color, rvec, tvec);
 
 		sync.Render();
@@ -582,15 +595,26 @@ int PLAYBACK_RECORD_CHARUCO_SYNC(char* fileName)
 		}
 		else if (key == 'c')
 			sync.ClearData();
-		else if (key == 'g')
+		else if (key == 't')
 			sync.TickSwitch();
+		else if (key == 'g')
+		{
+			cout << "Generate Point Cloud Data" << endl;
+			transformation_helpers_write_point_cloud(point_image, uncompressed_color_image, "pcd.ply");
+		}
+
+		k4a_capture_release(capture);
+		k4a_image_release(color_image);
+		k4a_image_release(uncompressed_color_image);
+		k4a_image_release(depth_image);
+		k4a_image_release(point_image);
+		k4a_image_release(colorlike_depth_image);
 	}
 	k4a_playback_close(playback);
-	sync.WriteTransformationData("test");
+	sync.WriteTransformationData("kinect");
 
 	return EXIT_SUCCESS;
 }
-
 
 
 int PLAYBACK_RECORD(char* fileName)
@@ -644,68 +668,12 @@ int PLAYBACK_RECORD(char* fileName)
 	while(1)
 	{
 		stream_result = k4a_playback_get_next_capture(playback, &capture);
-
 		if (stream_result == K4A_STREAM_RESULT_EOF) {
-			cout << "   Last capture" << endl;
-			result = k4a_playback_seek_timestamp(playback, timestamp * 1000, K4A_PLAYBACK_SEEK_BEGIN);
+			cout << "   Last capture" << endl; break;
 		}
-		// Fetch frame
 		depth_image = k4a_capture_get_depth_image(capture);
 		color_image = k4a_capture_get_color_image(capture);
-
-		// Convert color frame from mjpeg to bgra
-		k4a_image_format_t format;
-		format = k4a_image_get_format(color_image);
-		if (format != K4A_IMAGE_FORMAT_COLOR_MJPG) {
-			printf("Color format not supported. Please use MJPEG\n"); exit(1);
-		}
-
-		int color_width, color_height;
-		color_width = k4a_image_get_width_pixels(color_image);
-		color_height = k4a_image_get_height_pixels(color_image);
-
-		if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_COLOR_BGRA32,
-													 color_width,
-													 color_height,
-													 color_width * 4 * (int)sizeof(uint8_t),
-													 &uncompressed_color_image))
-		{
-			printf("Failed to create image buffer\n"); exit(1);
-		}
-
-		tjhandle tjHandle;
-		tjHandle = tjInitDecompress();
-		if (tjDecompress2(tjHandle,
-						  k4a_image_get_buffer(color_image),
-						  static_cast<unsigned long>(k4a_image_get_size(color_image)),
-						  k4a_image_get_buffer(uncompressed_color_image),
-						  color_width,
-						  0, // pitch
-						  color_height,
-						  TJPF_BGRA,
-						  TJFLAG_FASTDCT | TJFLAG_FASTUPSAMPLE) != 0)
-		{
-			printf("Failed to decompress color frame\n");
-			if (tjDestroy(tjHandle))
-			{
-				printf("Failed to destroy turboJPEG handle\n");
-			}
-			exit(1);
-		}
-		if (tjDestroy(tjHandle))
-		{
-			printf("Failed to destroy turboJPEG handle\n");
-		}
-
-		// Compute color point cloud by warping depth image into color camera geometry
-//		string outFile = "./plytest/pcd"+to_string(idx++) + ".ply";
-//		cout << outFile << endl;
-//		if (point_cloud_depth_to_color(transformation, depth_image, uncompressed_color_image, outFile) == false)
-//		{
-//			printf("Failed to transform depth to color\n");
-//			exit(1);
-//		}
-
+		uncompressed_color_image = Convert_Color_MJPG_To_BGRA(color_image);
 		point_image = create_point_cloud_based(uncompressed_color_image);
 		colorlike_depth_image = create_depth_image_like(uncompressed_color_image);
 		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
@@ -723,11 +691,10 @@ int PLAYBACK_RECORD(char* fileName)
 			tableTracker.Render();
 		}
 
-
-		char key = (char)waitKey(1);
+		char key = (char)waitKey(1000/15); // FPS
 		if (key == 'g') {
 			cout << "Generate Point Cloud Data" << endl;
-
+			transformation_helpers_write_point_cloud(point_image,uncompressed_color_image, "pcd.ply");
 		}
 		else if (key == 's') {
 			cout <<" Set table origin " << endl;

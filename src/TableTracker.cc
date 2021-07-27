@@ -26,6 +26,8 @@ TableTracker::TableTracker(Mat xy_table, Quaternionf _quat, Vector3f _tvec)
 	width  = xy_table.cols;
 	height = xy_table.rows;
 
+	// Test
+	sf = 1.;
 	long_width = 225;
 	lat_width = 55;
 	height_width = 27;
@@ -33,6 +35,19 @@ TableTracker::TableTracker(Mat xy_table, Quaternionf _quat, Vector3f _tvec)
 	long_pos = 0;
 	top_margin = 50;
 	bot_margin = 50;
+	view_calib = Point2i(200,120);
+
+	// Xper
+//	sf = 1/10.;
+//	long_width = 3200;
+//	lat_width = 600;
+//	height_width = 130;
+//	floor_height = 950;
+//	long_pos = 0;
+//	top_margin = 100;
+//	bot_margin = 200;
+//	view_calib = Point2i(1200,250);
+
 	tableCenter = Point2i(width*0.5, height*0.5 - long_pos);
 	deg = 1;
 	transX = 0, transY = 0;
@@ -43,55 +58,82 @@ TableTracker::TableTracker(Mat xy_table, Quaternionf _quat, Vector3f _tvec)
 	Vector3f axisZ = VectorRotatedByQuaternion(Vector3f(0,0,1), Quaternionf(quat));
 
 	cout << ">> World Coordinate (ChArUco Board)" << endl;
-	cout << "  Origin: " << tvec(0) << " " << tvec(1) << " " << tvec(2) << endl;
+	cout << "  Origin: " << tvec(0) * 10 << " " << tvec(1) *10 << " " << tvec(2) * 10 << endl;
 	cout << "  axis-X: " << axisX(0) << " " << axisX(1) << " " << axisX(2) << endl;
 	cout << "  axis-Y: " << axisY(0) << " " << axisY(1) << " " << axisY(2) << endl;
 	cout << "  axis-Z: " << axisZ(0) << " " << axisZ(1) << " " << axisZ(2) << endl << endl;
 
+	float world_ydir[3];
 	for (int i=0; i<3; i++) {
 		world_origin[i] = tvec(i) * 10;
 		world_normal[i] = axisZ(i);
+		world_ydir[i] = axisY(i);
 		ext_topPoint[i] = world_origin[i] + world_normal[i] * (floor_height + top_margin);
 		ext_botPoint[i] = world_origin[i] + world_normal[i] * (floor_height - bot_margin);
 	}
 	vtkMath::Normalize(world_normal);
+	vtkMath::Normalize(world_ydir);
 
-	float kinectView[3] = {0,0,1};
 	transform = vtkSmartPointer<vtkTransform>::New();
-	transform = Transform_KinectView(world_normal, kinectView);
+	transform = Transform_KinectView(world_normal, world_ydir);
 
 	maskVec = GenerateTableMask(xy_table, deg);
 	mask1 = Mat::zeros(height, width, CV_8UC1);
 	mask2 = Mat::zeros(height, width, CV_8UC1);
 	draw = Mat::zeros(height, width, CV_8UC3);
+
+	ofs1.open("pcd.obj");
 }
 
 TableTracker::~TableTracker()
 {
 }
 
-vtkSmartPointer<vtkTransform> TableTracker::Transform_KinectView(float v1[3], float v2[3])
+vtkSmartPointer<vtkTransform> TableTracker::Transform_KinectView(float z[3], float y[3])
 {
-	float axis[3];
-	for (int i=0;i<3;i++) v1[i] *= -1;
-	vtkMath::Cross(v1, v2, axis);
-	const float cosA = vtkMath::Dot(v1, v2);
-	const float k = 1.0f / (1.0f + cosA);
+	float axisZ[3];
+	float v1[3];
+	float v2[3] = {0,0,1};
+	for (int i=0;i<3;i++) v1[i] = -z[i];
+	vtkMath::Cross(v1, v2, axisZ);
+	const float cosAZ = vtkMath::Dot(v1, v2);
+	const float kZ = 1.0f / (1.0f + cosAZ);
 
-	const double affT[16] = { (axis[0] * axis[0] * k) + cosA,    (axis[1] * axis[0] * k) - axis[2], (axis[2] * axis[0] * k) + axis[1], 0,
-	           			      (axis[0] * axis[1] * k) + axis[2], (axis[1] * axis[1] * k) + cosA,    (axis[2] * axis[1] * k) - axis[0], 0,
-					          (axis[0] * axis[2] * k) - axis[1], (axis[1] * axis[2] * k) + axis[0], (axis[2] * axis[2] * k) + cosA,    0,
-							  0, 0, 0, 1 };
+	const double affTZ[16] = { (axisZ[0] * axisZ[0] * kZ) + cosAZ,    (axisZ[1] * axisZ[0] * kZ) - axisZ[2], (axisZ[2] * axisZ[0] * kZ) + axisZ[1], 0,
+	           			       (axisZ[0] * axisZ[1] * kZ) + axisZ[2], (axisZ[1] * axisZ[1] * kZ) + cosAZ,    (axisZ[2] * axisZ[1] * kZ) - axisZ[0], 0,
+					           (axisZ[0] * axisZ[2] * kZ) - axisZ[1], (axisZ[1] * axisZ[2] * kZ) + axisZ[0], (axisZ[2] * axisZ[2] * kZ) + cosAZ,    0,
+							   0, 0, 0, 1 };
+	vtkSmartPointer<vtkMatrix4x4> matZ = vtkSmartPointer<vtkMatrix4x4>::New();
+	matZ->DeepCopy(affTZ);
+
+	float axisY[3];
+	float v3[3];
+	float v4[3] = {0,1,0};
+	for (int i=0;i<3;i++) v3[i] = y[i];
+	vtkMath::Cross(v3, v4, axisY);
+	const float cosAY = vtkMath::Dot(v3, v4);
+	const float kY = 1.0f / (1.0f + cosAY);
+
+	const double affTY[16] = { (axisY[0] * axisY[0] * kY) + cosAY,    (axisY[1] * axisY[0] * kY) - axisY[2], (axisY[2] * axisY[0] * kY) + axisY[1], 0,
+	           			       (axisY[0] * axisY[1] * kY) + axisY[2], (axisY[1] * axisY[1] * kY) + cosAY,    (axisY[2] * axisY[1] * kY) - axisY[0], 0,
+					           (axisY[0] * axisY[2] * kY) - axisY[1], (axisY[1] * axisY[2] * kY) + axisY[0], (axisY[2] * axisY[2] * kY) + cosAY,    0,
+							   0, 0, 0, 1 };
+	double affT[16];
+
+	vtkSmartPointer<vtkMatrix4x4> matY = vtkSmartPointer<vtkMatrix4x4>::New();
+	matY->DeepCopy(affTY);
+
+	vtkSmartPointer<vtkMatrix4x4> mat44 = vtkSmartPointer<vtkMatrix4x4>::New();
+	mat44->Multiply4x4(affTZ, affTZ, affT);
+
 	transform->Identity();
-	transform->SetMatrix(affT);
-	for (int i=0;i<3;i++) v1[i] *= -1;
+	transform->SetMatrix(mat44);
 
 	return transform;
 }
 
 Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t color_image)
 {
-//	frameTimer.start();
 	int16_t *point_cloud_image_data = (int16_t*)(void*)k4a_image_get_buffer(point_cloud_image);
 	uint8_t *color_image_data = k4a_image_get_buffer(color_image);
 
@@ -99,18 +141,30 @@ Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_ima
 	uint8_t* point_cloud_2d_data = (uint8_t*)point_cloud_2d.data;
 
 	float tf_point[3];
-	float calib_point[3]; // set to world origin
+	float tf_worldOrigin[3]; // set to world origin
 	float tf_worldNormal[3], tf_topPoint[3], tf_botPoint[3];
-	transform->TransformPoint(world_origin, calib_point);
+	transform->TransformPoint(world_origin, tf_worldOrigin);
 	transform->TransformVector(world_normal, tf_worldNormal);
 	transform->TransformPoint(ext_topPoint, tf_topPoint);
 	transform->TransformPoint(ext_botPoint, tf_botPoint);
+
+//	cout << "#" << endl;
+//	cout << world_origin[0] << " " << world_origin[1] << " " << world_origin[2] << endl;
+//	cout << world_normal[0] << " " << world_normal[1] << " " << world_normal[2] << endl;
+//	cout << ext_topPoint[0] << " " << ext_topPoint[1] << " " << ext_topPoint[2] << endl;
+//	cout << ext_botPoint[0] << " " << ext_botPoint[1] << " " << ext_botPoint[2] << endl;
+//
+//	cout << tf_worldOrigin[0] << " " << tf_worldOrigin[1] << " " << tf_worldOrigin[2] << endl;
+//	cout << tf_worldNormal[0] << " " << tf_worldNormal[1] << " " << tf_worldNormal[2] << endl;
+//	cout << tf_topPoint[0] << " " << tf_topPoint[1] << " " << tf_topPoint[2] << endl;
+//	cout << tf_botPoint[0] << " " << tf_botPoint[1] << " " << tf_botPoint[2] << endl;
 
 	for (int i = 0; i < width * height; i++)
 	{
 		float X = point_cloud_image_data[ 3 * i + 0 ];
 		float Y = point_cloud_image_data[ 3 * i + 1 ];
 		float Z = point_cloud_image_data[ 3 * i + 2 ];
+
 		if (Z == 0) continue;
 
 		int b = color_image_data[ 4 * i + 0 ];
@@ -121,23 +175,30 @@ Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_ima
 
 		float point[3] = {X,Y,Z};
 		transform->TransformPoint(point, tf_point);
+//		ofs1 << "v " << tf_point[0] << " " << tf_point[1] << " " << tf_point[2] << endl;
+
 		float topPlane = tf_worldNormal[0]*(tf_point[0]-tf_topPoint[0]) + tf_worldNormal[1]*(tf_point[1]-tf_topPoint[1]) + tf_worldNormal[2]*(tf_point[2]-tf_topPoint[2]);
 		float botPlane = tf_worldNormal[0]*(tf_point[0]-tf_botPoint[0]) + tf_worldNormal[1]*(tf_point[1]-tf_botPoint[1]) + tf_worldNormal[2]*(tf_point[2]-tf_botPoint[2]);
 
 		if (topPlane > 0) continue;
 		if (botPlane < 0) continue;
 
-		int node_x = (int)tf_point[0] + width  * 0.5 - (int)calib_point[0] - 200;
-		int node_y = (int)tf_point[1] + height * 0.5 - (int)calib_point[1] + 100;
+		int node_x = (int)(tf_point[0] - tf_worldOrigin[0] - view_calib.x) * sf + (width  * 0.5);
+		int node_y = (int)(tf_point[1] - tf_worldOrigin[1] + view_calib.y) * sf + (height * 0.5);
+//		int node_x = (int)(tf_point[0] - tf_worldOrigin[0]) * sf + (width  * 0.5);
+//		int node_y = (int)(tf_point[1] - tf_worldOrigin[1]) * sf + (height * 0.5);
 
-		if (node_x > 0 && node_y > 0)
-		{
-			point_cloud_2d_data[ 3*(width*node_y + node_x) + 0] = b;
-			point_cloud_2d_data[ 3*(width*node_y + node_x) + 1] = g;
-			point_cloud_2d_data[ 3*(width*node_y + node_x) + 2] = r;
-		}
+//		ofs1 << "v " << node_x << " " << node_y << " 0" << endl;
+
+		if (node_x > width) continue;
+		if (node_y > height) continue;
+		if (node_x < 0) continue;
+		if (node_y < 0) continue;
+
+		point_cloud_2d_data[ 3*(width*node_y + node_x) + 0] = b;
+		point_cloud_2d_data[ 3*(width*node_y + node_x) + 1] = g;
+		point_cloud_2d_data[ 3*(width*node_y + node_x) + 2] = r;
 	}
-//	frameTimer.stop();
 	return point_cloud_2d;
 }
 
@@ -168,8 +229,8 @@ bool TableTracker::FindTableCenter()
 	}
 	else
 	{
-		int x_node = !isMask1 ? lat_width  : long_width;
-		int y_node = !isMask1 ? long_width : lat_width;
+		int x_node = !isMask1 ? lat_width  * sf : long_width * sf;
+		int y_node = !isMask1 ? long_width * sf : lat_width  * sf;
 
 		// Set starting point of mask
 		while (1)
@@ -188,6 +249,7 @@ bool TableTracker::FindTableCenter()
 					int cropBox_width = P2.x - P1.x;
 					int cropBox_height = P2.y - P1.y;
 					cout << "  CropBox [Width x Height]: " << cropBox_width << " x " << cropBox_height << endl;
+					cout << x_node << " " << y_node << endl;
 
 					if (cropBox_width > x_node && cropBox_height > y_node ) {
 						cout << "   Set ROI box" << flush;
@@ -349,7 +411,7 @@ bool TableTracker::FindTableCenter()
 
 			destroyAllWindows();
 			isCenter = true;
-			cout << "  Table Center was set" << endl;
+			cout << "  Table Center was set: " << tableCenter << endl;
 
 			maskVec.clear();
 			maskVec = GenerateTableMask(xy_table, deg);
@@ -416,9 +478,9 @@ tuple<double, double, Mat> TableTracker::MatcingData(vector<Mat> maskVec, Mat po
 
 vector<Mat> TableTracker::GenerateTableMask(Mat xy_table, int deg)
 {
-	int x_node = lat_width * 0.5;
-	int y_nodeBot = long_width * 0.5 - long_pos;
-	int y_nodeTop = long_width * 0.5 + long_pos;
+	int x_node = lat_width * 0.5 * sf;
+	int y_nodeBot = (long_width * 0.5 - long_pos) * sf;
+	int y_nodeTop = (long_width * 0.5 + long_pos) * sf;
 
 	cv::Mat mask = cv::Mat::zeros(height, width, CV_8UC1);
 	uchar* mask_data = (uchar*)mask.data;
@@ -447,28 +509,28 @@ vector<Mat> TableTracker::GenerateTableMask(Mat xy_table, int deg)
 		maskVec.push_back(mask_rot);
 	}
 
-//	cout << " Press 'c' to skip the present frame " << endl;
-//	cout << " Press 'q' to quit " << endl;
-//	int idx(0);
-//	while(1)
-//	{
-//		if (idx > 90/deg) idx = 0;
-//		cv::circle(maskVec[idx], Point(tableCenter.x, tableCenter.y), 1.0, Scalar::all(0), 3, 8, 0);
-//		cv::putText(maskVec[idx], "Resolution: "+ to_string(width)+ "x" + to_string(height),
-//								 Point(10,20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255), 1);
-//		cv::putText(maskVec[idx], "Table Degree: "+ to_string(idx*deg),
-//								 Point(10,40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255), 1);
-//
-//		imshow("mask_rot", maskVec[idx++]);
-//
-//		char key = (char)cv::waitKey(1000);
-//
-//		if (key == 'c') continue;
-//		if (key == 'q') {
-//			cv::destroyAllWindows();
-//			break;
-//		}
-//	}
+	cout << " Press 'c' to skip the present frame " << endl;
+	cout << " Press 'q' to quit " << endl;
+	int idx(0);
+	while(1)
+	{
+		if (idx > 90/deg) idx = 0;
+		cv::circle(maskVec[idx], Point(tableCenter.x, tableCenter.y), 1.0, Scalar::all(0), 3, 8, 0);
+		cv::putText(maskVec[idx], "Resolution: "+ to_string(width)+ "x" + to_string(height),
+								 Point(10,20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255), 1);
+		cv::putText(maskVec[idx], "Table Degree: "+ to_string(idx*deg),
+								 Point(10,40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255), 1);
+
+		imshow("mask_rot", maskVec[idx++]);
+
+		char key = (char)cv::waitKey(1000);
+
+		if (key == 'c') continue;
+		if (key == 'q') {
+			cv::destroyAllWindows();
+			break;
+		}
+	}
 
 	return maskVec;
 }

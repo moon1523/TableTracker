@@ -36,7 +36,7 @@ int main(int argc, char** argv)
 
 int TABLE_TRACKING(int argc, char** argv)
 {
-	auto qtData = ReadCharucoData("kinect");
+	auto qtData = ReadCharucoData("calib_4");
 
 	// Read OCR data
 	cv::Vec3d ocrDat(0,0,0); // lat, long, height
@@ -95,6 +95,7 @@ int TABLE_TRACKING(int argc, char** argv)
 		char key = (char)waitKey(1);
 		if (key == 'g') {
 			cout << "Generate Point Cloud Data" << endl;
+			transformation_helpers_write_point_cloud(point_image, color_image, "pcd.ply");
 
 		}
 		else if (key == 's') {

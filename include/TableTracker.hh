@@ -18,6 +18,7 @@
 #include <vtkSmartPointer.h>
 #include <vtkPlane.h>
 #include <vtkMath.h>
+#include <vtkMatrix4x4.h>
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -105,12 +106,14 @@ private:
 	float top_margin, bot_margin;
 	float ext_topPoint[3], ext_botPoint[3];
 	float trans_table[3];
+	Point2i view_calib;
+	float sf;
 
 	// World
 	Quaternionf quat;
 	Vector3f tvec;
 	float world_origin[3], world_normal[3];
-	vtkSmartPointer<vtkTransform> transform;
+	vtkSmartPointer<vtkTransform> transform, transformZ, transformY;
 
 	// Masks
 	int deg;
@@ -128,6 +131,9 @@ private:
 
 	// Timer
 	Timer frameTimer;
+
+	// test
+	ofstream ofs1;
 };
 
 
