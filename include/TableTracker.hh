@@ -53,9 +53,15 @@ private:
     int64 start_, time_;
 };
 
+enum class PatientTable
+{
+	TestDevice,
+	AlluraXper
+};
+
 class TableTracker {
 public:
-	TableTracker(Mat xy_table, Quaternionf quat, Vector3f tvec);
+	TableTracker(int tableType, Mat xy_table, Quaternionf quat, Vector3f tvec);
 	virtual ~TableTracker();
 
 	void ProcessCurrentFrame();
@@ -102,12 +108,14 @@ private:
 	k4a_image_t color_img, depth_img, point_img;
 
 	// Table
-	float lat_width, long_width, height_width, floor_height, long_pos;
+	int pTable;
+	float lat_width, long_width, height_width, floor_height;
 	float top_margin, bot_margin;
 	float ext_topPoint[3], ext_botPoint[3];
 	float trans_table[3];
 	Point2i view_calib;
 	float sf;
+
 
 	// World
 	Quaternionf quat;

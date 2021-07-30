@@ -307,60 +307,60 @@ static bool point_cloud_depth_to_color(k4a_transformation_t transformation_handl
     return true;
 }
 
-static bool point_cloud_depth_to_color(k4a_transformation_t transformation_handle,
-                                       const k4a_image_t depth_image,
-                                       const k4a_image_t color_image,
-									   string file_name)
-{
-    // transform color image into depth camera geometry
-    int color_image_width_pixels = k4a_image_get_width_pixels(color_image);
-    int color_image_height_pixels = k4a_image_get_height_pixels(color_image);
-
-    k4a_image_t transformed_depth_image = NULL;
-    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16,
-                                                 color_image_width_pixels,
-                                                 color_image_height_pixels,
-                                                 color_image_width_pixels * (int)sizeof(uint16_t),
-                                                 &transformed_depth_image))
-    {
-        printf("Failed to create transformed depth image\n");
-        return false;
-    }
-
-    k4a_image_t point_cloud_image = NULL;
-    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
-                                                 color_image_width_pixels,
-                                                 color_image_height_pixels,
-                                                 color_image_width_pixels * 3 * (int)sizeof(int16_t),
-                                                 &point_cloud_image))
-    {
-        printf("Failed to create point cloud image\n");
-        return false;
-    }
-
-    if (K4A_RESULT_SUCCEEDED !=
-        k4a_transformation_depth_image_to_color_camera(transformation_handle, depth_image, transformed_depth_image))
-    {
-        printf("Failed to compute transformed depth image\n");
-        return false;
-    }
-
-    if (K4A_RESULT_SUCCEEDED != k4a_transformation_depth_image_to_point_cloud(transformation_handle,
-                                                                              transformed_depth_image,
-                                                                              K4A_CALIBRATION_TYPE_COLOR,
-                                                                              point_cloud_image))
-    {
-        printf("Failed to compute point cloud\n");
-        return false;
-    }
-
-    transformation_helpers_write_point_cloud(point_cloud_image, color_image, file_name.c_str());
-
-    k4a_image_release(transformed_depth_image);
-    k4a_image_release(point_cloud_image);
-
-    return true;
-}
+//static bool point_cloud_depth_to_color(k4a_transformation_t transformation_handle,
+//                                       const k4a_image_t depth_image,
+//                                       const k4a_image_t color_image,
+//									   string file_name)
+//{
+//    // transform color image into depth camera geometry
+//    int color_image_width_pixels = k4a_image_get_width_pixels(color_image);
+//    int color_image_height_pixels = k4a_image_get_height_pixels(color_image);
+//
+//    k4a_image_t transformed_depth_image = NULL;
+//    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16,
+//                                                 color_image_width_pixels,
+//                                                 color_image_height_pixels,
+//                                                 color_image_width_pixels * (int)sizeof(uint16_t),
+//                                                 &transformed_depth_image))
+//    {
+//        printf("Failed to create transformed depth image\n");
+//        return false;
+//    }
+//
+//    k4a_image_t point_cloud_image = NULL;
+//    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
+//                                                 color_image_width_pixels,
+//                                                 color_image_height_pixels,
+//                                                 color_image_width_pixels * 3 * (int)sizeof(int16_t),
+//                                                 &point_cloud_image))
+//    {
+//        printf("Failed to create point cloud image\n");
+//        return false;
+//    }
+//
+//    if (K4A_RESULT_SUCCEEDED !=
+//        k4a_transformation_depth_image_to_color_camera(transformation_handle, depth_image, transformed_depth_image))
+//    {
+//        printf("Failed to compute transformed depth image\n");
+//        return false;
+//    }
+//
+//    if (K4A_RESULT_SUCCEEDED != k4a_transformation_depth_image_to_point_cloud(transformation_handle,
+//                                                                              transformed_depth_image,
+//                                                                              K4A_CALIBRATION_TYPE_COLOR,
+//                                                                              point_cloud_image))
+//    {
+//        printf("Failed to compute point cloud\n");
+//        return false;
+//    }
+//
+//    transformation_helpers_write_point_cloud(point_cloud_image, color_image, file_name.c_str());
+//
+//    k4a_image_release(transformed_depth_image);
+//    k4a_image_release(point_cloud_image);
+//
+//    return true;
+//}
 
 pair<Quaternionf, Vector3f> ReadCharucoData(string fileName)
 {
@@ -393,9 +393,10 @@ pair<Quaternionf, Vector3f> ReadCharucoData(string fileName)
 
 int CHARUCO_SYNC(int argc, char** argv)
 {
+	cout << "### CHARUO BOARD DETECTION" << endl;
 	//tracking option configuration3
 	string detParm("detector_params.yml");
-	string camParm("kinect2160.yml");
+	string camParm("kinect3072.yml");
 
 	// Start camera
 	k4a_device_t device = nullptr;
@@ -407,6 +408,8 @@ int CHARUCO_SYNC(int argc, char** argv)
 	deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_3072P;
 	deviceConfig.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED; // No need for depth during calibration
 	deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_15;     // Don't use all USB bandwidth
+	deviceConfig.subordinate_delay_off_master_usec = 0;
+	deviceConfig.synchronized_images_only = true;
 	VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
 
 	// Get calibration information
@@ -416,8 +419,14 @@ int CHARUCO_SYNC(int argc, char** argv)
 //	int depthWidth = sensorCalibration.depth_camera_calibration.resolution_width;
 //	int depthHeight = sensorCalibration.depth_camera_calibration.resolution_height;
 
+	cout << "   Color resolution: " << sensorCalibration.color_camera_calibration.resolution_width << " x "
+								    << sensorCalibration.color_camera_calibration.resolution_height << endl;
+	cout << "   Depth resolution: " << sensorCalibration.depth_camera_calibration.resolution_width << " x "
+								    << sensorCalibration.depth_camera_calibration.resolution_height << endl << endl;
+
+
 	// Synchronization
-	CharucoSync sync;
+	CharucoSync sync((int)PatientTable::TestDevice);
 	sync.SetParameters(camParm, detParm);
 	sync.SetScalingFactor(0.4f);
 	bool getData(false);
@@ -455,11 +464,15 @@ int CHARUCO_SYNC(int argc, char** argv)
 		}
 		else if (key == 'c')
 			sync.ClearData();
-		else if (key == 'g')
+		else if (key == 't')
 			sync.TickSwitch();
 	}
 	k4a_device_close(device);
-	sync.WriteTransformationData(string(argv[2]));
+
+	string coordName = "world_coord";
+	if (argc > 2) coordName = string(argv[2]);
+	cout << ">> Coordinate System is printed: " << coordName << endl;
+	sync.WriteTransformationData(string(coordName));
 
 	return EXIT_SUCCESS;
 }
@@ -515,7 +528,7 @@ k4a_image_t Convert_Color_MJPG_To_BGRA(k4a_image_t color_image)
 
 int PLAYBACK_RECORD_CHARUCO_SYNC(char* fileName)
 {
-	cout << ">> Playback Record CHARUCO_SYNC" << endl;
+	cout << "### PLAYBACK RECORD CHARUO BOARD DETECTION" << endl;
 	int timestamp = 1000;
 	k4a_playback_t playback = NULL;
 	k4a_calibration_t sensorCalibration;
@@ -558,11 +571,12 @@ int PLAYBACK_RECORD_CHARUCO_SYNC(char* fileName)
 	string camParm("kinect3072.yml");
 
 	// Synchronization
-	CharucoSync sync;
+	CharucoSync sync((int)PatientTable::AlluraXper);
 	sync.SetParameters(camParm, detParm);
 	sync.SetScalingFactor(0.4f);
 	bool getData(false);
 	waitKey(1000);
+
 	while (1)
 	{
 		stream_result = k4a_playback_get_next_capture(playback, &capture);
@@ -611,7 +625,7 @@ int PLAYBACK_RECORD_CHARUCO_SYNC(char* fileName)
 		k4a_image_release(colorlike_depth_image);
 	}
 	k4a_playback_close(playback);
-	sync.WriteTransformationData("kinect");
+	sync.WriteTransformationData("playback_charucoData");
 
 	return EXIT_SUCCESS;
 }
@@ -658,9 +672,9 @@ int PLAYBACK_RECORD(char* fileName)
 								 << calibration.depth_camera_calibration.resolution_height << endl << endl;
 
 
-	auto qtData = ReadCharucoData("kinect");
+	auto qtData = ReadCharucoData("./Coord/20210728_OR");
 	Mat xy_table = create_color_xy_table(calibration);
-	TableTracker tableTracker(xy_table, qtData.first, qtData.second);
+	TableTracker tableTracker((int)PatientTable::AlluraXper, xy_table, qtData.first, qtData.second);
 	cv::Vec3d ocrDat(0,0,0); // lat, long, height
 
 	bool isCenter(false);
@@ -691,7 +705,7 @@ int PLAYBACK_RECORD(char* fileName)
 			tableTracker.Render();
 		}
 
-		char key = (char)waitKey(1000/15); // FPS
+		char key = (char)waitKey(1); // FPS
 		if (key == 'g') {
 			cout << "Generate Point Cloud Data" << endl;
 			transformation_helpers_write_point_cloud(point_image,uncompressed_color_image, "pcd.ply");

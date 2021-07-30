@@ -36,7 +36,8 @@ int main(int argc, char** argv)
 
 int TABLE_TRACKING(int argc, char** argv)
 {
-	auto qtData = ReadCharucoData("calib_4");
+	cout << "### TABLE TRACKING" << endl;
+	auto qtData = ReadCharucoData("./Coord/20210730_LAB");
 
 	// Read OCR data
 	cv::Vec3d ocrDat(0,0,0); // lat, long, height
@@ -63,9 +64,8 @@ int TABLE_TRACKING(int argc, char** argv)
 	k4aTransform = k4a_transformation_create(&sensorCalibration);
 
 	Mat xy_table = create_color_xy_table(sensorCalibration);
-	TableTracker tableTracker(xy_table, qtData.first, qtData.second);
+	TableTracker tableTracker((int)PatientTable::TestDevice, xy_table, qtData.first, qtData.second);
 
-	//	tableTracker.Read_K4A_MKV_Record("rec0610.mkv", xy_table);
 
 	bool isCenter(false);
 	cout << ">> Table Tracking" << endl;

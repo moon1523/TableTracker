@@ -10,14 +10,16 @@
 #include <iostream>
 #include <fstream>
 
+#include "TableTracker.hh"
+
 using namespace std;
 using namespace cv;
 using namespace Eigen;
 
 class CharucoSync
 {
-    public:
-    CharucoSync();
+public:
+	CharucoSync(int tableType);
     virtual ~CharucoSync();
     bool SetParameters(string camParam, string detParam);
     void EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec);
@@ -31,7 +33,7 @@ class CharucoSync
     }
     void SetScalingFactor(float s);
     
-    private:
+private:
     cv::Ptr<cv::aruco::CharucoBoard> board;
     cv::Ptr<cv::aruco::DetectorParameters> params;
     Mat camMatrix;
@@ -41,8 +43,14 @@ class CharucoSync
     float sf;
 
     //avg values
+    int frameNo;
+    bool isStack;
+    vector<Vector4d> tenQuats;
+    Vector4d avg10_quat;
     vector<Vector4d> quaternions;
     Vec3d tvec_sum;
+
+    int pTable;
 };
 
 #endif

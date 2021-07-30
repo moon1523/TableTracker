@@ -1,9 +1,10 @@
 #include "CharucoSync.hh"
 
 Eigen::Vector4d quaternionAverage(std::vector<Eigen::Vector4d> quaternions);
+extern Vector3f VectorRotatedByQuaternion(Vector3f v, Quaternionf q);
 
-CharucoSync::CharucoSync()
-    : getPose(false), sf(1)
+CharucoSync::CharucoSync(int tableType)
+    :pTable(tableType), getPose(false), sf(1), frameNo(0), isStack(false)
 {
 }
 
@@ -20,8 +21,17 @@ bool CharucoSync::SetParameters(string camParm, string detParam)
     fs["distortion_coefficients"] >> distCoeffs;
 
     cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
-//    board = cv::aruco::CharucoBoard::create(5, 7, 0.0765f, 0.0535f, dictionary);
-    board = cv::aruco::CharucoBoard::create(5, 7, 0.0300f, 0.0235f, dictionary);
+
+    switch((PatientTable)pTable)
+	{
+	case PatientTable::TestDevice:
+		board = cv::aruco::CharucoBoard::create(5, 7, 0.0300f, 0.0235f, dictionary);
+		break;
+	case PatientTable::AlluraXper:
+		board = cv::aruco::CharucoBoard::create(5, 7, 0.0765f, 0.0535f, dictionary);
+		break;
+	}
+
     params = cv::aruco::DetectorParameters::create();
 
     FileStorage fs2(detParam, FileStorage::READ);
@@ -93,9 +103,52 @@ void CharucoSync::EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec)
                 double angle = norm(rvec);
                 Vector3d axis(rvec(0) / angle, rvec(1) / angle, rvec(2) / angle);
                 Quaterniond q(AngleAxisd(angle, axis)); q.normalize();
-                quaternions.push_back(Vector4d(q.x(), q.y(), q.z(), q.w()));
-                tvec_sum += tvec;
-            }
+
+                if (isnan(q.x()))
+				{
+					cout << "Filtering the frame: Coordinate is not correctly estimated" << endl;
+				}
+                else if (frameNo < 10)
+                {
+                	tenQuats.push_back(Vector4d(q.x(), q.y(), q.z(), q.w()));
+                	cout << frameNo++ << ": " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << endl;
+                }
+                else if (frameNo == 10)
+                {
+                	avg10_quat = quaternionAverage(tenQuats);
+                	frameNo++;
+                }
+                else
+                {
+                	Quaternionf quat0 = Quaternionf(avg10_quat.w(), avg10_quat.x(), avg10_quat.y(), avg10_quat.z());
+                	Quaternionf quat1 = Quaternionf(q.w(), q.x(), q.y(), q.z());
+
+                	Vector3f axisX0 = VectorRotatedByQuaternion(Vector3f(1,0,0), quat0);
+					Vector3f axisY0 = VectorRotatedByQuaternion(Vector3f(0,1,0), quat0);
+					Vector3f axisZ0 = VectorRotatedByQuaternion(Vector3f(0,0,1), quat0);
+					Vector3f axisX1 = VectorRotatedByQuaternion(Vector3f(1,0,0), quat1);
+                    Vector3f axisY1 = VectorRotatedByQuaternion(Vector3f(0,1,0), quat1);
+                    Vector3f axisZ1 = VectorRotatedByQuaternion(Vector3f(0,0,1), quat1);
+
+                    double dotX = axisX0.dot(axisX1);
+					double dotY = axisY0.dot(axisY1);
+					double dotZ = axisZ0.dot(axisZ1);
+
+                    if (dotX > 0 && dotY > 0 && dotZ > 0) {
+                    	frameNo++;
+						isStack = true;
+                    }
+                }
+
+                if (isStack)
+				{
+					quaternions.push_back(Vector4d(q.x(), q.y(), q.z(), q.w()));
+					tvec_sum += tvec;
+					isStack = false;
+				}
+
+
+            } // getPose
         }
     }
 }
@@ -114,7 +167,9 @@ void CharucoSync::Render()
         cv::rectangle(display, cropRect, CV_RGB(255, 255, 0), 3);
     }
     resize(display, display, Size(display.cols * sf, display.rows * sf));
-    putText(display, "number of data: "+to_string(quaternions.size()), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
+//    putText(display, "number of data: "+to_string(quaternions.size()), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
+    if (frameNo>10)
+    	putText(display, "number of data: " + to_string(frameNo-10) , Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
     if(getPose) 
         putText(display, "obtaining pose data..", Point(10, 40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1);
     imshow("Synchronization", display);
