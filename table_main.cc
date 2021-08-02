@@ -69,6 +69,7 @@ int TABLE_TRACKING(int argc, char** argv)
 
 	bool isCenter(false);
 	cout << ">> Table Tracking" << endl;
+
 	while(1)
 	{
 		k4a_device_get_capture(device, &sensorCapture, 1000);

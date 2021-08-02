@@ -22,6 +22,7 @@ TableTracker::TableTracker(int tableType, Mat xy_table, Quaternionf _quat, Vecto
   isCrop(false), isRot(false), isMask1(false), isMask2(false), isCenter(false), isFind(false),
   max_sim1(-FLT_MAX), max_sim2(-FLT_MAX)
 {
+
 	// color: 1280 x 720, depth: 640 x 576
 	width  = xy_table.cols;
 	height = xy_table.rows;
@@ -558,87 +559,6 @@ vector<Mat> TableTracker::GenerateTableMask(Mat xy_table, int deg)
 	return maskVec;
 }
 
-vector<Mat> TableTracker::Read_K4A_MKV_Record(string fileName, Mat xy_table)
-{
-
-
-
-//	Timer rec_timer;
-//	rec_timer.start();
-//	VideoCapture vcap(fileName);
-//	if ( !vcap.isOpened() )
-//		cerr << "Fail to read video record" << endl;
-//
-//	Mat color_frame, depth_frame;
-//	vector<Mat> colorVec, depthVec;
-//
-//	while(1)
-//	{
-//		vcap >> color_frame;
-//		if (color_frame.empty()) break;
-//		colorVec.push_back(color_frame);
-//	}
-//
-//	// https://docs.microsoft.com/en-us/azure/kinect-dk/record-file-format
-//	// -map 0:1 (depth)
-//	// -map 0:0 (color)
-//	// -vsync 0 (match frame rate)
-//	system(("ffmpeg -i " + fileName + " -map 0:1 -vsync 0 ./record/depth%d.png").c_str());
-//
-	vector<Mat> point_cloud_vec;
-//	for (size_t i=0; i<colorVec.size(); i++) {
-//		string depthFile = "./record/depth" + to_string(i+1) + ".png";
-//		depth_frame = imread(depthFile, IMREAD_ANYDEPTH );
-//		depthVec.push_back(depth_frame);
-////		imshow("depth", depth_frame);
-////		char key = (char)waitKey(1000/30);
-////		if (key == 'q') {
-////			break;
-////		}
-//
-//		Mat point_cloud = Mat::zeros(height, width, CV_32FC3);
-//		float* xy_table_data = (float*)xy_table.data;
-//		float* point_cloud_data = (float*)point_cloud.data;
-//		uint16_t* depth_data = (uint16_t*)depthVec[i].data;
-//
-//		int point_count(0);
-//		for (int y=0, idx=0; y<height; y++) {
-//			for (int x=0; x<width; x++, idx++) {
-//				int channel = y * width * 3 + x * 3;
-//				if (depth_data[idx] != 0 && !isnan(xy_table_data[idx*2]) && !isnan(xy_table_data[idx*2+1]) )
-//				{
-//					float X = xy_table_data[idx*2]     * depth_data[idx];
-//					float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
-//					float Z = depth_data[idx];
-//					float p[3] = {X,Y,Z};
-//
-//						point_cloud_data[channel + 0] = xy_table_data[idx*2]     * depth_data[idx];// + calib_point[0];
-//						point_cloud_data[channel + 1] = xy_table_data[idx*2 + 1] * depth_data[idx];// + calib_point[1];
-//						point_cloud_data[channel + 2] = depth_data[idx];// + calib_point[2];
-//						point_count++;
-//				}
-//				else
-//				{
-//					point_cloud_data[channel + 0] = nanf("");
-//					point_cloud_data[channel + 1] = nanf("");
-//					point_cloud_data[channel + 2] = nanf("");
-//				}
-//			}
-//		}
-//		point_cloud_vec.push_back(point_cloud);
-//	}
-//
-//	rec_timer.stop();
-//	cout << "Frame #: " << colorVec.size() << endl;
-//	cout << "Reading time: " << rec_timer.time() << endl;
-//
-//	system("rm ./record/*.png");
-//
-//	exit(0);
-
-	return point_cloud_vec;
-}
-
 void onMouseCropImage(int event, int x, int y, int f, void *param)
 {
     switch (event)
@@ -698,6 +618,87 @@ void onMouseCropImage(int event, int x, int y, int f, void *param)
         }
     }
 }
+
+//vector<Mat> TableTracker::Read_K4A_MKV_Record(string fileName, Mat xy_table)
+//{
+//
+//
+//
+////	Timer rec_timer;
+////	rec_timer.start();
+////	VideoCapture vcap(fileName);
+////	if ( !vcap.isOpened() )
+////		cerr << "Fail to read video record" << endl;
+////
+////	Mat color_frame, depth_frame;
+////	vector<Mat> colorVec, depthVec;
+////
+////	while(1)
+////	{
+////		vcap >> color_frame;
+////		if (color_frame.empty()) break;
+////		colorVec.push_back(color_frame);
+////	}
+////
+////	// https://docs.microsoft.com/en-us/azure/kinect-dk/record-file-format
+////	// -map 0:1 (depth)
+////	// -map 0:0 (color)
+////	// -vsync 0 (match frame rate)
+////	system(("ffmpeg -i " + fileName + " -map 0:1 -vsync 0 ./record/depth%d.png").c_str());
+////
+//	vector<Mat> point_cloud_vec;
+////	for (size_t i=0; i<colorVec.size(); i++) {
+////		string depthFile = "./record/depth" + to_string(i+1) + ".png";
+////		depth_frame = imread(depthFile, IMREAD_ANYDEPTH );
+////		depthVec.push_back(depth_frame);
+//////		imshow("depth", depth_frame);
+//////		char key = (char)waitKey(1000/30);
+//////		if (key == 'q') {
+//////			break;
+//////		}
+////
+////		Mat point_cloud = Mat::zeros(height, width, CV_32FC3);
+////		float* xy_table_data = (float*)xy_table.data;
+////		float* point_cloud_data = (float*)point_cloud.data;
+////		uint16_t* depth_data = (uint16_t*)depthVec[i].data;
+////
+////		int point_count(0);
+////		for (int y=0, idx=0; y<height; y++) {
+////			for (int x=0; x<width; x++, idx++) {
+////				int channel = y * width * 3 + x * 3;
+////				if (depth_data[idx] != 0 && !isnan(xy_table_data[idx*2]) && !isnan(xy_table_data[idx*2+1]) )
+////				{
+////					float X = xy_table_data[idx*2]     * depth_data[idx];
+////					float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
+////					float Z = depth_data[idx];
+////					float p[3] = {X,Y,Z};
+////
+////						point_cloud_data[channel + 0] = xy_table_data[idx*2]     * depth_data[idx];// + calib_point[0];
+////						point_cloud_data[channel + 1] = xy_table_data[idx*2 + 1] * depth_data[idx];// + calib_point[1];
+////						point_cloud_data[channel + 2] = depth_data[idx];// + calib_point[2];
+////						point_count++;
+////				}
+////				else
+////				{
+////					point_cloud_data[channel + 0] = nanf("");
+////					point_cloud_data[channel + 1] = nanf("");
+////					point_cloud_data[channel + 2] = nanf("");
+////				}
+////			}
+////		}
+////		point_cloud_vec.push_back(point_cloud);
+////	}
+////
+////	rec_timer.stop();
+////	cout << "Frame #: " << colorVec.size() << endl;
+////	cout << "Reading time: " << rec_timer.time() << endl;
+////
+////	system("rm ./record/*.png");
+////
+////	exit(0);
+//
+//	return point_cloud_vec;
+//}
 
 //Mat TableTracker::GenerateBinaryTablePointCloud(const cv::Mat depth_mat, int *point_count)
 //{

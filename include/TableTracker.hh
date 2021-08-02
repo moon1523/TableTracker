@@ -56,7 +56,10 @@ private:
 enum class PatientTable
 {
 	TestDevice,
-	AlluraXper
+	AlluraXper,
+	Azurion7,
+	ArtisZee,
+	ArtisQ,
 };
 
 class TableTracker {
@@ -96,9 +99,6 @@ public:
 		color_img = color_image;
 		point_img = point_image;
 	}
-
-	// Auxiliary Functions
-	vector<Mat> Read_K4A_MKV_Record(string fileName, Mat xy_table);
 
 private:
 	// Mat, Image

@@ -679,8 +679,10 @@ int PLAYBACK_RECORD(char* fileName)
 
 	bool isCenter(false);
 	cout << ">> Stream loop start !!" << endl;
+
 	while(1)
 	{
+		Timer loop_timer; loop_timer.start();
 		stream_result = k4a_playback_get_next_capture(playback, &capture);
 		if (stream_result == K4A_STREAM_RESULT_EOF) {
 			cout << "   Last capture" << endl; break;
@@ -726,7 +728,11 @@ int PLAYBACK_RECORD(char* fileName)
 		k4a_image_release(uncompressed_color_image);
 		k4a_image_release(point_image);
 		k4a_image_release(colorlike_depth_image);
+
+		loop_timer.stop();
+		cout << "\r" << loop_timer.time() << flush;
 	}
+	cout << endl;
 	k4a_playback_close(playback);
 
 	return EXIT_SUCCESS;
