@@ -94,10 +94,16 @@ TableTracker::TableTracker(int tableType, Mat xy_table, Quaterniond _quat, Vecto
 	mask1 = Mat::zeros(height, width, CV_8UC1);
 	mask2 = Mat::zeros(height, width, CV_8UC1);
 	draw = Mat::zeros(height, width, CV_8UC3);
+
+	cumAvgAngle = 0;
+	frameAngle = 0;
+
+	ofs.open("output.txt");
 }
 
 TableTracker::~TableTracker()
 {
+	ofs.close();
 }
 
 vtkSmartPointer<vtkTransform> TableTracker::Transform_KinectView(float z[3], float x[3])
@@ -149,7 +155,7 @@ Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_ima
 	int16_t *point_cloud_image_data = (int16_t*)(void*)k4a_image_get_buffer(point_cloud_image);
 	uint8_t *color_image_data = k4a_image_get_buffer(color_image);
 
-	Mat point_cloud_2d = cv::Mat::zeros(height, width, CV_8UC3);
+	Mat point_cloud_2d = cv::Mat::zeros(height, width, CV_8UC1);
 	uint8_t* point_cloud_2d_data = (uint8_t*)point_cloud_2d.data;
 
 	float tf_point[3];
@@ -251,20 +257,32 @@ Mat TableTracker::GenerateTablePointCloud(const k4a_image_t point_cloud_image, c
 
 void TableTracker::ProcessCurrentFrame()
 {
-	Mat PCD;
 	if(isColor) {
-		PCD = GenerateColorTablePointCloud(point_img, color_img);
-		add(PCD, draw, view);
+		Mat colorPCD = GenerateColorTablePointCloud(point_img, color_img);
+		add(colorPCD, draw, view);
+		Mat grayPCD;
+		cvtColor(colorPCD, grayPCD, COLOR_BGR2GRAY);
+		threshold(grayPCD, binPCD, 10, 255, THRESH_BINARY);
 	}
 	else
-		PCD = GenerateTablePointCloud(point_img, depth_img);
-	results = MatchingData(PCD, deg);
+	{
+		binPCD = GenerateTablePointCloud(point_img, depth_img);
+	}
 
-	// If table is not moved, start to check the table rotate.
+	results = MatchingData(deg);
+
+	// If table is not moved within 30 frames (i.e., OCR data is not changed), start to check the table rotate.
 	if (!isMove && angleVec.size() > 30) {
+
 		double max = *max_element(angleVec.begin(), angleVec.end());
 		double min = *min_element(angleVec.begin(), angleVec.end());
-		if (max-min > 3) {
+		double nume = accumulate(angleVec.begin(), angleVec.end(), 0);
+		double deno = angleVec.size();
+		double prevAngle = angleVec[angleVec.size()-2];
+		double currAngle = get<0>(results);
+
+		if (max-min > 3)
+		{
 			isRot = true;
 			angleVec.clear();
 		}
@@ -276,37 +294,56 @@ void TableTracker::ProcessCurrentFrame()
 void TableTracker::Render(double time)
 {
 	Mat match_mat = get<2>(results);
+	double similarity = get<1>(results);
 
-	if (!isMove && !isRot && angleVec.size() > 30)
+	if (!isMove && !isRot)
 	{
 		double nume = accumulate(angleVec.begin(), angleVec.end(), 0);
 		double deno = angleVec.size();
-		putText(match_mat, "Table Degree: " + to_string(floor(nume/deno+0.5)),
-							cv::Point(10,height-60), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+		cumAvgAngle = floor(nume/deno + 0.5);
+
+//		cout << frameNo << " " << nume << " " << deno << " " << cumAvgAngle << " " << get<0>(results) <<  endl;
+
+		// If cumAvgAngle is between -3 and 3 degrees, set the angle 0 degree.
+		if ( -3.0 <= cumAvgAngle && cumAvgAngle <= 3.0 )
+			cumAvgAngle = 0.0;
+		string str_deg = to_string(get<0>(results)) + "/" + to_string(cumAvgAngle);
+		cv::bitwise_xor(maskVec[cumAvgAngle + 90], binPCD, match_mat);
+		putText(match_mat, "Table Degree (Raw/Cum): " + str_deg,
+				cv::Point(10,height-60), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+
+		ofs << frameNo << "\t" << cumAvgAngle << endl;
 	}
 	else
 	{
-		putText(match_mat, "Table Degree: " + to_string(get<0>(results)),
-							cv::Point(10,height-60), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+		putText(match_mat, "Table Degree (Raw): " + to_string(get<0>(results)),
+				cv::Point(10,height-60), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+
+		ofs << frameNo << "\t" << get<0>(results) << endl;
 	}
 
-
-//	putText(match_mat, "Similarity: " + to_string(get<1>(results)) + "%",
-//										cv::Point(10,height-60), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
-	putText(match_mat, "Frame Time (s): " + to_string(time),
-										cv::Point(10,height-30), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+	if (similarity < 0.5) {
+		putText(match_mat, "Similarity is lower than 0.5, Severe occlusion is occurred.",
+				cv::Point(10,60), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+	}
 	putText(match_mat, "Frame #: " + to_string(frameNo++),
-										cv::Point(10,30), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+				cv::Point(10,30), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+	putText(match_mat, "Similarity: " + to_string(similarity),
+				cv::Point(10,height-90), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+	putText(match_mat, "Frame Time (s): " + to_string(time),
+				cv::Point(10,height-30), cv::FONT_HERSHEY_SIMPLEX, 0.75, cv::Scalar(255), 2);
+
 	circle(match_mat, tableCenter, 2.0, Scalar::all(150), 3, 8, 0);
+	imshow("Match Results", match_mat);
 
 
+
+
+	// Color view
 	rectangle(view, mask1_p1, mask1_p2, CV_RGB(255,255,0), 2);
 	rectangle(view, mask2_p1, mask2_p2, CV_RGB(255,255,0), 2);
 	circle(view, tableCenter, 2.0, CV_RGB(255,0,0), 3, 8, 0);
-
 	if(isColor) imshow("TableCenter", view);
-	imshow("Match Results", match_mat);
-
 
 	// Check the mask and table center
 	//	Mat check = cv::Mat::zeros(height, width, CV_8UC3);
@@ -314,7 +351,6 @@ void TableTracker::Render(double time)
 	//	rectangle(check, mask2_p1, mask2_p2, CV_RGB(255,255,0), 2);
 	//	circle(check, tableCenter, 2.0, CV_RGB(255,0,0), 3, 8, 0);
 	//	imshow("check",check);
-
 
 	// Re-initialize surface points, table center, mask
 	for (int i=0;i<3;i++) {
@@ -324,19 +360,10 @@ void TableTracker::Render(double time)
 	tableCenter = tableCenter_init;
 	mask1_p1 = mask1_p1_init;
 	mask1_p2 = mask1_p2_init;
-
 }
 
-tuple<double, double, Mat> TableTracker::MatchingData(Mat point_cloud_2d, int deg)
+tuple<double, double, Mat> TableTracker::MatchingData(int deg)
 {
-	Mat binPCD;
-	if (isColor) {
-		Mat grayPCD;
-		cvtColor(point_cloud_2d, grayPCD, COLOR_BGR2GRAY);
-		threshold(grayPCD, binPCD, 10, 255, THRESH_BINARY);
-	}
-	else binPCD = point_cloud_2d;
-
 	Mat match_xor, match_and, match_mat;
 	double max_sim(0);
 	double match_deg(0);
@@ -350,62 +377,27 @@ tuple<double, double, Mat> TableTracker::MatchingData(Mat point_cloud_2d, int de
 		// Find the most similar mask
 		if (max_sim < similarity) {
 			// bitwise_xor is used to view, not affect the actual matching calculation
-			cv::bitwise_xor(maskVec[idx], binPCD, match_xor);
-			match_mat = match_xor;
-
+			cv::bitwise_xor(maskVec[idx], binPCD, match_xor); match_mat = match_xor;
 			max_sim = similarity;
-			match_deg = (idx - maxDeg) * deg;
+			match_deg = (idx - maxDeg) * deg; // if 0 deg is matched ==> (90 - 90) * 1 deg
 		}
 		idx++;
 	}
 
-	// Accumulate Data (if table is moved or is rotated,
-	// data will be cleared. (Check the function TransMathcingMasks in header)
+	// Accumulate Data (if table is moved or is rotated, data will be cleared.
+	// Check the function TransMathcingMasks in header.
 	angleVec.push_back(match_deg);
+	frameAngle = match_deg;
 
 	// if matching data is empty, only point cloud data will be shown.
 	if (match_mat.empty())
-		match_mat = point_cloud_2d;
+		match_mat = binPCD;
 
 	return make_tuple(match_deg, max_sim, match_mat);
 }
 
 void TableTracker::GenerateTableMask(Mat xy_table, int deg)
 {
-
-// Trial to change the algorithm of generating masks.
-//
-//	for (int y = mask1_p1.y; y < mask1_p2.y; y++) {
-//		for (int x = mask1_p1.x; x < mask1_p2.x; x++) {
-//			pixelData.push_back(Point2i(x,y));
-//		}
-//	}
-//
-//	for (int i=-maxDeg/deg; i<=maxDeg/deg; i++)
-//	{
-//
-//
-//		transform_mask->Identity();
-//		transform_mask->Translate(tableCenter.x, tableCenter.y, 0);
-//		transform_mask->RotateWXYZ(i, 0, 0, 1);
-//		transform_mask->Translate(-tableCenter.x, -tableCenter.y, 0);
-//
-//		Mat mask = cv::Mat::zeros(height, width, CV_8UC1);
-//		uchar* mask_data = (uchar*)mask.data;
-//
-//
-//		float tf_pixel[2];
-//		for (size_t j=0; j<pixelData.size(); j++) {
-//			float pixel[2] = {(float)pixelData[j].x, (float)pixelData[j].y};
-//			transform_mask->TransformPoint(pixel, tf_pixel);
-//			mask_data[ (int)tf_pixel[1] * width + (int)tf_pixel[0] ] = 255;
-//		}
-//		maskVec.push_back(mask);
-//
-//
-//	}
-
-
 	// Initialize the mask data.
 	mask = cv::Mat::zeros(height, width, CV_8UC1);
 	for (int y = mask1_p1.y; y < mask1_p2.y; y++) {
@@ -762,358 +754,3 @@ void onMouseCropImage(int event, int x, int y, int f, void *param)
         }
     }
 }
-
-//Mat TableTracker::GenerateBinaryTablePointCloud(const cv::Mat depth_mat, int *point_count)
-//{
-//	cv::Mat point_cloud = cv::Mat::zeros(height, width, CV_32FC3);
-//	uint16_t* depth_data = (uint16_t*)depth_mat.data;
-//	float* point_cloud_data = (float*)point_cloud.data;
-//    *point_count = 0;
-//
-////    if (ofs1.is_open()) {
-////    	ofs1 << depth_mat << endl;
-////		for (int y=0, idx=0; y<height; y++) {
-////				for (int x=0; x<width; x++, idx++) {
-////					ofs1 << xy_table_data[idx*2] << " " << xy_table_data[idx*2+1] << " " << depth_data[idx] << endl;
-////				}
-////		}
-////		ofs1.close();
-////	}
-//
-//	// Table origin, normal
-//    float p0[3], n0[3];
-//    if (isCenter) {
-//    	for (int i=0;i<3 ;i++) {
-//    		p0[i] = plane_origin[i];
-//    		n0[i] = plane_normal[i];
-//    	}
-//    }
-//    else
-//    {
-//    	for (int i=0;i<3 ;i++) {
-//			p0[i] = plane_origin[i];
-//			n0[i] = plane_normal[i];
-//		}
-//    }
-//	vtkMath::Normalize(n0);
-//
-//	float proj_point[3];
-//	float tf_point[3];
-//	float tf_center[3];
-//
-//	// Calculate center point of transformed PCD to calibration Kinect View
-//	bool pass(false);
-//	for (int y=0, idx=0; y<height; y++) {
-//		for (int x=0; x<width; x++, idx++) {
-//			float X = xy_table_data[idx*2]     * depth_data[idx];
-//			float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
-//			float Z = depth_data[idx];
-//			float p[3] = {X,Y,Z};
-//			transform->TransformPoint(p, tf_point);
-//
-//			if ( x == width * 0.5 && y == height * 0.5 ) {
-//				tf_center[0] = tf_point[0];
-//				tf_center[1] = tf_point[1];
-//				tf_center[2] = tf_point[2];
-//				pass =true;
-//				break;
-//			}
-//		}
-//		if (pass) break;
-//	}
-//
-//	float N0[3], P0[3], P1[3], P2[3];
-//	transform->TransformPoint(plane_origin, P0);
-//	transform->TransformPoint(plane_normal, N0);
-//
-//	float calib_point[3] = { 0 - P0[0],
-//							 0 - P0[1],
-//							 0 - P0[2],
-//	};
-//
-//	for (int i=0;i<3;i++) {
-//		P1[i] = P0[i] + N0[i] * top_margin;
-//		P2[i] = P0[i] - N0[i] * bot_margin;
-//	}
-//
-//	// Generate Point Cloud Data
-//    for (int y=0, idx=0; y<height; y++)
-//    {
-//    	for (int x=0; x<width; x++, idx++)
-//    	{
-//    		int channel = y * width * 3 + x * 3;
-//
-//    		if (depth_data[idx] != 0 && !isnan(xy_table_data[idx*2]) && !isnan(xy_table_data[idx*2+1]) )
-//    		{
-//    			float X = xy_table_data[idx*2]     * depth_data[idx];
-//				float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
-//				float Z = depth_data[idx];
-//				float p[3] = {X,Y,Z};
-//
-//    			transform->TransformPoint(p, tf_point);
-//
-//    			float upperPlane = N0[0]*(tf_point[0]-P1[0]) + N0[1]*(tf_point[1]-P1[1]) + N0[2]*(tf_point[2]-P1[2]);
-//				float lowerPlane = N0[0]*(tf_point[0]-P2[0]) + N0[1]*(tf_point[1]-P2[1]) + N0[2]*(tf_point[2]-P2[2]);
-//
-//    			if ( upperPlane < 0 && lowerPlane > 0) {
-//    				point_cloud_data[channel + 0] = tf_point[0] + calib_point[0];
-//					point_cloud_data[channel + 1] = tf_point[1] + calib_point[1];
-//					point_cloud_data[channel + 2] = tf_point[2];
-//					(*point_count)++;
-//
-////					if(!isCenter) {
-////						int node_x = point_cloud_data[channel + 0] * scalingFactor + width * 0.5;
-////						int node_y = point_cloud_data[channel + 1] * scalingFactor + height * 0.5;
-////						screenPCD[make_pair(node_x,node_y)] = Vec3f(p[0], p[1], p[2]);
-////						if (ofs2.is_open()) {
-////							ofs2 << "v " << screenPCD[{node_x,node_y}](0) << " " << screenPCD[{node_x,node_y}](1) << " " << screenPCD[{node_x,node_y}](2) << endl;
-////						}
-////					}
-//
-//    			}
-//    			else
-//    			{
-//        			point_cloud_data[channel + 0] = nanf("");
-//        			point_cloud_data[channel + 1] = nanf("");
-//        			point_cloud_data[channel + 2] = nanf("");
-//    			}
-//    		}
-//    		else
-//    		{
-//    			point_cloud_data[channel + 0] = nanf("");
-//    			point_cloud_data[channel + 1] = nanf("");
-//    			point_cloud_data[channel + 2] = nanf("");
-//    		}
-//    	}
-//    }
-////    ofs2.close();
-//
-//    return point_cloud;
-//}
-
-//Mat TableTracker::ProjectBinaryPointCloud2Image(Mat point_cloud_3d, Mat xy_table)
-//{
-//	cv::Mat point_cloud_2d = cv::Mat::zeros(xy_table.rows, xy_table.cols, CV_8UC1);
-//	uchar* point_cloud_2d_data = (uchar*)point_cloud_2d.data;
-//	float* point_cloud_3d_data = (float*)point_cloud_3d.data;
-//
-//	for (int y=0, idx=0; y < xy_table.rows; y++)
-//	{
-//		for (int x=0; x < xy_table.cols; x++, idx++)
-//		{
-//			int channel_3d = y * xy_table.cols * 3 + x * 3;
-//
-//			if ( isnan(point_cloud_3d_data[channel_3d + 0]) ) continue;
-//			int node_x = point_cloud_3d_data[channel_3d + 0] + width * 0.5;
-//			if ( node_x < 0 || node_x > width) continue;
-//			int node_y = point_cloud_3d_data[channel_3d + 1] + height * 0.5;
-//			if ( node_y < 0 || node_y > height) continue;
-//
-//			point_cloud_2d_data[node_y*width + node_x] = 255;
-//		}
-//	}
-//
-//	return point_cloud_2d;
-//}
-
-//vector<Mat> TableTracker::Read_K4A_MKV_Record(string fileName, Mat xy_table)
-//{
-//	Timer rec_timer;
-//	rec_timer.start();
-//	VideoCapture vcap(fileName);
-//	if ( !vcap.isOpened() )
-//		cerr << "Fail to read video record" << endl;
-//
-//	Mat color_frame, depth_frame;
-//	vector<Mat> colorVec, depthVec;
-//
-//	while(1)
-//	{
-//		vcap >> color_frame;
-//		if (color_frame.empty()) break;
-//		colorVec.push_back(color_frame);
-//	}
-//
-//	// https://docs.microsoft.com/en-us/azure/kinect-dk/record-file-format
-//	// -map 0:1 (depth)
-//	// -map 0:0 (color)
-//	// -vsync 0 (match frame rate)
-//	system(("ffmpeg -i " + fileName + " -map 0:1 -vsync 0 ./record/depth%d.png").c_str());
-//
-//	vector<Mat> point_cloud_vec;
-//	for (size_t i=0; i<colorVec.size(); i++) {
-//		string depthFile = "./record/depth" + to_string(i+1) + ".png";
-//		depth_frame = imread(depthFile, IMREAD_ANYDEPTH );
-//		depthVec.push_back(depth_frame);
-////		imshow("depth", depth_frame);
-////		char key = (char)waitKey(1000/30);
-////		if (key == 'q') {
-////			break;
-////		}
-//
-//		Mat point_cloud = Mat::zeros(height, width, CV_32FC3);
-//		float* xy_table_data = (float*)xy_table.data;
-//		float* point_cloud_data = (float*)point_cloud.data;
-//		uint16_t* depth_data = (uint16_t*)depthVec[i].data;
-//
-//		int point_count(0);
-//		for (int y=0, idx=0; y<height; y++) {
-//			for (int x=0; x<width; x++, idx++) {
-//				int channel = y * width * 3 + x * 3;
-//				if (depth_data[idx] != 0 && !isnan(xy_table_data[idx*2]) && !isnan(xy_table_data[idx*2+1]) )
-//				{
-//					float X = xy_table_data[idx*2]     * depth_data[idx];
-//					float Y = xy_table_data[idx*2 + 1] * depth_data[idx];
-//					float Z = depth_data[idx];
-//					float p[3] = {X,Y,Z};
-//
-//						point_cloud_data[channel + 0] = xy_table_data[idx*2]     * depth_data[idx];// + calib_point[0];
-//						point_cloud_data[channel + 1] = xy_table_data[idx*2 + 1] * depth_data[idx];// + calib_point[1];
-//						point_cloud_data[channel + 2] = depth_data[idx];// + calib_point[2];
-//						point_count++;
-//				}
-//				else
-//				{
-//					point_cloud_data[channel + 0] = nanf("");
-//					point_cloud_data[channel + 1] = nanf("");
-//					point_cloud_data[channel + 2] = nanf("");
-//				}
-//			}
-//		}
-//		point_cloud_vec.push_back(point_cloud);
-//	}
-//
-//	rec_timer.stop();
-//	cout << "Frame #: " << colorVec.size() << endl;
-//	cout << "Reading time: " << rec_timer.time() << endl;
-//
-//	system("rm ./record/*.png");
-//
-//	exit(0);
-//
-//	return point_cloud_vec;
-//}
-
-//void TableTracker::FindTableCenter_AllTemplateMathcing()
-//{
-//	Mat colorPCD, binPCD;
-//	if (isColor)
-//	{
-//		colorPCD = GenerateColorTablePointCloud(point_img, color_img);
-//		Mat grayPCD;
-//		cvtColor(colorPCD, grayPCD, COLOR_BGR2GRAY);
-//		threshold(grayPCD, binPCD, 10, 255, THRESH_BINARY);
-//	}
-//	else
-//	{
-//		binPCD = GenerateTablePointCloud(point_img, depth_img);
-//		binPCD.copyTo(colorPCD);
-//	}
-//
-//	putText(colorPCD, "Press 'c' key to capture the mask",
-//		cv::Point(10,30), FONT_HERSHEY_SIMPLEX, 0.75, Scalar::all(255), 2);
-//
-//	if (!isFind)
-//	{
-//		if (isCenter) {
-//			add(colorPCD, draw, view);
-//			imshow("Center", view);
-//		}
-//		else imshow("Center", colorPCD);
-//		char key = (char)waitKey(1);
-//		if (key == 'c') {
-//			destroyWindow("Center");
-//			isFind = true;
-//		}
-//	}
-//	else
-//	{
-//		int x_node = lat_width  * sf;
-//		int y_node = long_width * sf;
-//
-//		while (1)
-//		{
-//			Mat roi, copy;
-//			colorPCD.copyTo(roi);
-//			colorPCD.copyTo(copy);
-//			Rect bounds(0, 0, roi.cols, roi.rows);
-//			setMouseCallback("Drag", onMouseCropImage, &roi);
-//
-//			if (clicked) isCrop = true;
-//			if (cropRect.width > 0 && clicked == false) {
-//				roi = colorPCD(cropRect & bounds);
-//				if (isCrop)
-//				{
-//					int cropBox_width = P2.x - P1.x;
-//					int cropBox_height = P2.y - P1.y;
-//					cout << "  CropBox [Width x Height]: " << cropBox_width << " x " << cropBox_height << endl;
-//
-//					if (cropBox_width > y_node && cropBox_height > y_node ) {
-//						cout << "   Set ROI box" << endl;
-////						transX = P1.x, transY = P1.y;
-//						destroyWindow("Drag");
-//						isCrop = false;
-//						break;
-//					}
-//					else {
-//						cout << "   Reset ROI box" << endl;
-////						transX, transY = 0;
-//						isCrop = false;
-//					}
-//
-//				}
-//			}
-//			else colorPCD.copyTo(roi);
-//			cv::rectangle(copy, P1, P2, CV_RGB(255,255,255), 2);
-//			cv::imshow("Drag", copy);
-//			waitKey(1);
-//		}
-//		isFind = false;
-//
-//		// Start dragging mask
-//		Mat match_xor, match_and;
-//		int maskSum = cv::sum(maskVec[0]).val[0];
-//
-//		for (size_t i=0; i<maskVec.size(); i++)
-//		{
-//			Timer check; check.start();
-//			while(1)
-//			{
-//				Mat mask;
-//				float tx = transX - (width  * 0.5 - P1.x);
-//				float ty = transY - (height * 0.5 - P1.y);
-//				float trans[] = { 1.0, 0.0, tx, 0.0, 1.0, ty };
-//				Mat transM = Mat(2,3, CV_32F, trans);
-//				warpAffine(maskVec[i], mask, transM, maskVec[i].size());
-//
-//				cv::bitwise_and(mask, binPCD, match_and);
-////				cv::bitwise_xor(mask, binPCD, match_xor);
-//				double similarity = cv::sum(match_and).val[0] / maskSum;
-//
-//				if (max_sim1 < similarity) {
-//					max_sim1 = similarity;
-//					match_and.copyTo(mask1);
-//				}
-//
-//				if (transX == (P2.x - P1.x)) {
-//					transX = 0;
-//					transY++;
-//					if (transY == (P2.y - P1.y)) {
-//						transY = 0;
-//						cout << i << "'th mask set" << endl;
-//						break;
-//					}
-//				}
-//
-//				transX++;
-//
-////				imshow("CenterMask", match_and);
-////				waitKey(1);
-//			}
-//			check.stop();
-//			cout << "Time: " << check.time() << endl;
-//
-//
-//		}
-//	}
-//}

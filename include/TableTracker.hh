@@ -79,14 +79,14 @@ public:
 	Mat GenerateTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t depth_image);
 	void GenerateTableMask(Mat xy_table, int deg);
 
-	tuple<double, double, Mat> MatchingData(Mat point_cloud_2d, int deg);
+	tuple<double, double, Mat> MatchingData(int deg);
 
 	// Access Functions
 	void SetIsColor(bool _isColor) { isColor = _isColor; }
 	void SetTableCenter(tuple<Point2i, Point2i, Point2i> data) {
 		isCenter = true;
 		mask1_p1 = get<0>(data);
-		mask1_p2 = get<1>(data);
+		mask1_p2 = mask1_p1 + Point2i(lat_width*sf, long_width*sf);
 		tableCenter = get<2>(data);
 		tableCenter_init = tableCenter;
 		mask1_p1_init = mask1_p1;
@@ -101,15 +101,13 @@ public:
 		point_img = point_image;
 	}
 	void TransMatchingMasks(Vector3d ocrDat) {
-		// +x: right, -x: left, +y: up, -y: down, +z: pull, -z: push
+		// +x: right, -x: left, +y: up, -y: down, +z: pull, -z: push (same as charuo world coordinate system)
 		if (ocrData != ocrDat) isMove = true;
 		ocrData = ocrDat;
 		for (int i=0; i<3; i++) {
-//			world_origin[i] += axisX(i) * (x-init_position(0)) + axisY(i) * (y-init_position(1)) + axisZ(i) * (z-init_position(2));
 			ext_topPoint[i] += axisX(i) * (ocrData(0)-init_position(0)) + axisY(i) * (ocrData(1)-init_position(1)) + axisZ(i) * (ocrDat(2)-init_position(2));
 			ext_botPoint[i] += axisX(i) * (ocrData(0)-init_position(0)) + axisY(i) * (ocrData(1)-init_position(1)) + axisZ(i) * (ocrDat(2)-init_position(2));
 		}
-//		tableCenter += Point2i((int)((x-init_position(0))*sf), (int)(-(y-init_position(1))*sf));
 		mask1_p1 += Point2i((int)((ocrData(0)-init_position(0))*sf), (int)(-(ocrData(1)-init_position(1))*sf));
 		mask1_p2 += Point2i((int)((ocrData(0)-init_position(0))*sf), (int)(-(ocrData(1)-init_position(1))*sf));
 
@@ -168,9 +166,13 @@ private:
 	Vector3d axisX, axisY, axisZ;
 	Point2i tableCenter_init, mask1_p1_init, mask1_p2_init;
 
-	int frameNo;
+
 	// Accumulate angle
+	int frameNo;
 	vector<double> angleVec;
+	double cumAvgAngle, frameAngle;
+	Mat binPCD;
+	ofstream ofs;
 
 };
 
