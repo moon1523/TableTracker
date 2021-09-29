@@ -134,6 +134,7 @@ private:
 	double lat_width, long_width, height_width, floor_height;
 	double top_margin, bot_margin;
 	float ext_topPoint[3], ext_botPoint[3];
+	Vector3d top_plane_point, bot_plane_point;
 	Point2i view_calib;
 	double sf;
 	vtkSmartPointer<vtkTransform> transform_mask;

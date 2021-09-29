@@ -43,7 +43,9 @@ TableTracker::TableTracker(int tableType, Mat xy_table, Quaterniond _quat, Vecto
 		break;
 	case PatientTable::AlluraXper:
 		sf = 1/10.;
-		init_position = Vector3d(-280, -960, -10); // lat, long, height
+//		init_position = Vector3d(-280, -960, -10); // lat, long, height
+		init_position = Vector3d(0,0,0);
+
 		long_width = 3200;
 		lat_width = 500;
 		height_width = 130;
@@ -65,10 +67,13 @@ TableTracker::TableTracker(int tableType, Mat xy_table, Quaterniond _quat, Vecto
 	axisZ = VectorRotatedByQuaternion(Vector3d(0,0,1), quat);
 
 	cout << ">> World Coordinate (ChArUco Board)" << endl;
-	cout << "  Origin: " << tvec(0) * 10 << " " << tvec(1) *10 << " " << tvec(2) * 10 << endl;
-	cout << "  axis-X: " << axisX(0) << " " << axisX(1) << " " << axisX(2) << endl;
-	cout << "  axis-Y: " << axisY(0) << " " << axisY(1) << " " << axisY(2) << endl;
-	cout << "  axis-Z: " << axisZ(0) << " " << axisZ(1) << " " << axisZ(2) << endl << endl;
+	cout << "  Origin (mm): " << tvec(0) * 10 << " " << tvec(1) *10 << " " << tvec(2) * 10 << endl;
+	cout << "  axis-X     : " << axisX(0) << " " << axisX(1) << " " << axisX(2) << endl;
+	cout << "  axis-Y     : " << axisY(0) << " " << axisY(1) << " " << axisY(2) << endl;
+	cout << "  axis-Z     : " << axisZ(0) << " " << axisZ(1) << " " << axisZ(2) << endl << endl;
+
+	top_plane_point = tvec * 10 + axisZ * (floor_height + top_margin);
+	bot_plane_point = tvec * 10 + axisZ * (floor_height - bot_margin);
 
 	float world_xdir[3];
 	for (int i=0; i<3; i++) {
@@ -81,6 +86,7 @@ TableTracker::TableTracker(int tableType, Mat xy_table, Quaterniond _quat, Vecto
 	vtkMath::Normalize(world_normal);
 	vtkMath::Normalize(world_xdir);
 
+	
 	transform = vtkSmartPointer<vtkTransform>::New();
 	transform = Transform_KinectView(world_normal, world_xdir);
 	ocrData = Vector3d(0,0,0);
@@ -108,44 +114,36 @@ TableTracker::~TableTracker()
 
 vtkSmartPointer<vtkTransform> TableTracker::Transform_KinectView(float z[3], float x[3])
 {
-	float axisZ[3];
-	float v1[3];
-	float v2[3] = {0,0,1};
-	for (int i=0;i<3;i++) v1[i] = -z[i];
-	vtkMath::Cross(v1, v2, axisZ);
-	const float cosAZ = vtkMath::Dot(v1, v2);
-	const float kZ = 1.0f / (1.0f + cosAZ);
-
-	const double affTZ[16] = { (axisZ[0] * axisZ[0] * kZ) + cosAZ,    (axisZ[1] * axisZ[0] * kZ) - axisZ[2], (axisZ[2] * axisZ[0] * kZ) + axisZ[1], 0,
-	           			       (axisZ[0] * axisZ[1] * kZ) + axisZ[2], (axisZ[1] * axisZ[1] * kZ) + cosAZ,    (axisZ[2] * axisZ[1] * kZ) - axisZ[0], 0,
-					           (axisZ[0] * axisZ[2] * kZ) - axisZ[1], (axisZ[1] * axisZ[2] * kZ) + axisZ[0], (axisZ[2] * axisZ[2] * kZ) + cosAZ,    0,
-							   0, 0, 0, 1 };
-	vtkSmartPointer<vtkMatrix4x4> matZ = vtkSmartPointer<vtkMatrix4x4>::New();
-	matZ->DeepCopy(affTZ);
-
-	float axisX[3];
-	float v3[3];
-	float v4[3] = {0,1,0};
-	for (int i=0;i<3;i++) v3[i] = x[i];
-	vtkMath::Cross(v3, v4, axisX);
-	const float cosAX = vtkMath::Dot(v3, v4);
-	const float kX = 1.0f / (1.0f + cosAX);
-
-	const double affTX[16] = { (axisX[0] * axisX[0] * kX) + cosAX,    (axisX[1] * axisX[0] * kX) - axisX[2], (axisX[2] * axisX[0] * kX) + axisX[1], 0,
-	           			       (axisX[0] * axisX[1] * kX) + axisX[2], (axisX[1] * axisX[1] * kX) + cosAX,    (axisX[2] * axisX[1] * kX) - axisX[0], 0,
-					           (axisX[0] * axisX[2] * kX) - axisX[1], (axisX[1] * axisX[2] * kX) + axisX[0], (axisX[2] * axisX[2] * kX) + cosAX,    0,
-							   0, 0, 0, 1 };
-	double affT[16];
-
-	vtkSmartPointer<vtkMatrix4x4> matX = vtkSmartPointer<vtkMatrix4x4>::New();
-	matX->DeepCopy(affTX);
-
-	// Align the axes of Z and X for the world coordinate (charuco) system
-	vtkSmartPointer<vtkMatrix4x4> mat44 = vtkSmartPointer<vtkMatrix4x4>::New();
-	mat44->Multiply4x4(affTZ, affTZ, affT);
-
+	double theta;
+	double axis_z[3], axis_x[3];
 	transform->Identity();
-	transform->SetMatrix(matZ);
+	
+	// Align Z
+	double v1[3]; // world downvector
+	for (int i=0;i<3;i++) v1[i] = -z[i];
+	double v2[3] = {0,0,1}; // camera z-axis
+	theta = acos(vtkMath::Dot(v1,v2)) * 180 / M_PI;
+	vtkMath::Cross(v1, v2, axis_z);
+	vtkMath::Normalize(axis_z);
+	transform->RotateWXYZ(theta, axis_z);
+
+	
+	// Align X
+	double xd[3]; for(int i=0;i<3;i++) xd[i] = (double)x[i];
+	double v3[3], v3_proj[3];
+	transform->TransformVector(xd,v3);
+	vtkSmartPointer<vtkPlane> plane = vtkSmartPointer<vtkPlane>::New();
+	plane->SetOrigin(0.,0.,0.);
+	plane->SetNormal(0.,0.,1.);
+	double origin[3] = {0.,0.,0.};
+	double normal[3] = {0.,0.,1.};
+	plane->ProjectVector(v3, origin, normal, v3_proj);
+
+	double v4[3] = {1,0,0}; // camera x-axis
+	theta = acos(vtkMath::Dot(v3_proj,v4)) * 180 / M_PI;
+	vtkMath::Cross(v3_proj, v4, axis_x);
+	vtkMath::Normalize(axis_x);
+	transform->RotateWXYZ(theta, axis_x);
 
 	return transform;
 }
@@ -155,7 +153,7 @@ Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_ima
 	int16_t *point_cloud_image_data = (int16_t*)(void*)k4a_image_get_buffer(point_cloud_image);
 	uint8_t *color_image_data = k4a_image_get_buffer(color_image);
 
-	Mat point_cloud_2d = cv::Mat::zeros(height, width, CV_8UC1);
+	Mat point_cloud_2d = cv::Mat::zeros(height, width, CV_8UC3);
 	uint8_t* point_cloud_2d_data = (uint8_t*)point_cloud_2d.data;
 
 	float tf_point[3];
@@ -166,7 +164,6 @@ Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_ima
 	transform->TransformPoint(ext_topPoint, tf_topPoint);
 	transform->TransformPoint(ext_botPoint, tf_botPoint);
 
-
 	for (int i = 0; i < width * height; i++)
 	{
 		float X = point_cloud_image_data[ 3 * i + 0 ];
@@ -174,7 +171,6 @@ Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_ima
 		float Z = point_cloud_image_data[ 3 * i + 2 ];
 
 		if (Z == 0) continue;
-
 		int b = color_image_data[ 4 * i + 0 ];
 		int g = color_image_data[ 4 * i + 1 ];
 		int r = color_image_data[ 4 * i + 2 ];
@@ -193,7 +189,7 @@ Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_ima
 
 		int node_x = (int)( tf_point[0] - tf_worldOrigin[0] - view_calib.x ) * sf + width  * 0.5 ;
 		int node_y = (int)( tf_point[1] - tf_worldOrigin[1] + view_calib.y ) * sf + height * 0.5 ;
-
+		
 		if (node_x > width) continue;
 		if (node_y > height) continue;
 		if (node_x < 0) continue;
@@ -202,7 +198,6 @@ Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_ima
 		point_cloud_2d_data[ 3*(width*node_y + node_x) + 0] = b;
 		point_cloud_2d_data[ 3*(width*node_y + node_x) + 1] = g;
 		point_cloud_2d_data[ 3*(width*node_y + node_x) + 2] = r;
-
 	}
 	return point_cloud_2d;
 }
@@ -223,6 +218,7 @@ Mat TableTracker::GenerateTablePointCloud(const k4a_image_t point_cloud_image, c
 	transform->TransformPoint(ext_topPoint, tf_topPoint);
 	transform->TransformPoint(ext_botPoint, tf_botPoint);
 
+
 	for (int i = 0; i < width * height; i++)
 	{
 		float X = point_cloud_image_data[ 3 * i + 0 ];
@@ -230,7 +226,6 @@ Mat TableTracker::GenerateTablePointCloud(const k4a_image_t point_cloud_image, c
 		float Z = point_cloud_image_data[ 3 * i + 2 ];
 
 		if (Z == 0) continue;
-
 
 		float point[3] = {X,Y,Z};
 		transform->TransformPoint(point, tf_point);
@@ -271,9 +266,9 @@ void TableTracker::ProcessCurrentFrame()
 
 	results = MatchingData(deg);
 
-	// If table is not moved within 30 frames (i.e., OCR data is not changed), start to check the table rotate.
-	if (!isMove && angleVec.size() > 30) {
-
+	// If table is not moved within 30 frames, start to check the table rotate.
+	if (!isMove && angleVec.size() > 30) 
+	{
 		double max = *max_element(angleVec.begin(), angleVec.end());
 		double min = *min_element(angleVec.begin(), angleVec.end());
 		double nume = accumulate(angleVec.begin(), angleVec.end(), 0);
@@ -301,8 +296,6 @@ void TableTracker::Render(double time)
 		double nume = accumulate(angleVec.begin(), angleVec.end(), 0);
 		double deno = angleVec.size();
 		cumAvgAngle = floor(nume/deno + 0.5);
-
-//		cout << frameNo << " " << nume << " " << deno << " " << cumAvgAngle << " " << get<0>(results) <<  endl;
 
 		// If cumAvgAngle is between -3 and 3 degrees, set the angle 0 degree.
 		if ( -3.0 <= cumAvgAngle && cumAvgAngle <= 3.0 )
