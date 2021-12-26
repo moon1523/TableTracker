@@ -1,19 +1,26 @@
-#ifndef INCLUDE_TABLETRACKER_HH_
-#define INCLUDE_TABLETRACKER_HH_
+#ifndef TABLETRACKER_HH_
+#define TABLETRACKER_HH_
 
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <map>
+#include <list>
 #include <numeric>
+#include <algorithm>
 
 #include <k4a/k4a.h>
 #include <k4a/k4a.hpp>
+
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
+#include <Eigen/Geometry>
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/videoio.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/core/eigen.hpp>
 
 #include <vtkTransform.h>
 #include <vtkSmartPointer.h>
@@ -21,12 +28,9 @@
 #include <vtkMath.h>
 #include <vtkMatrix4x4.h>
 
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
-#include <Eigen/Geometry>
+
 
 using namespace std;
-using namespace cv;
 using namespace Eigen;
 
 class Timer
@@ -66,118 +70,137 @@ enum class PatientTable
 
 class TableTracker {
 public:
-	TableTracker(int tableType, Mat xy_table, Quaterniond quat, Vector3d tvec);
-	virtual ~TableTracker();
+	TableTracker(string config_file, int image_width, int image_height);
+	~TableTracker();
 
-	void ProcessCurrentFrame();
-	void Render(double time);
-
-	// Processing Functions
-	bool FindTableCenter();
-	vtkSmartPointer<vtkTransform> Transform_KinectView(float v1[3], float v2[3]);
-	Mat GenerateColorTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t color_image);
-	Mat GenerateTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t depth_image);
-	void GenerateTableMask(Mat xy_table, int deg);
-
-	tuple<double, double, Mat> MatchingData(int deg);
-
-	// Access Functions
-	void SetIsColor(bool _isColor) { isColor = _isColor; }
-	void SetTableCenter(tuple<Point2i, Point2i, Point2i> data) {
-		isCenter = true;
-		mask1_p1 = get<0>(data);
-		mask1_p2 = mask1_p1 + Point2i(lat_width*sf, long_width*sf);
-		tableCenter = get<2>(data);
-		tableCenter_init = tableCenter;
-		mask1_p1_init = mask1_p1;
-		mask1_p2_init = mask1_p2;
-	}
 	void SetNewImage(k4a_image_t depth_image, k4a_image_t point_image) {
 		depth_img = depth_image;
 		point_img = point_image;
 	}
-	void SetColorImage(k4a_image_t color_image, k4a_image_t point_image) {
+	void SetNewImage(k4a_image_t color_image, k4a_image_t depth_image, k4a_image_t point_image) {
 		color_img = color_image;
+		depth_img = depth_image;
 		point_img = point_image;
 	}
-	void TransMatchingMasks(Vector3d ocrDat) {
-		// +x: right, -x: left, +y: up, -y: down, +z: pull, -z: push (same as charuo world coordinate system)
-		if (ocrData != ocrDat) isMove = true;
-		ocrData = ocrDat;
-		for (int i=0; i<3; i++) {
-			ext_topPoint[i] += axisX(i) * (ocrData(0)-init_position(0)) + axisY(i) * (ocrData(1)-init_position(1)) + axisZ(i) * (ocrDat(2)-init_position(2));
-			ext_botPoint[i] += axisX(i) * (ocrData(0)-init_position(0)) + axisY(i) * (ocrData(1)-init_position(1)) + axisZ(i) * (ocrDat(2)-init_position(2));
-		}
-		mask1_p1 += Point2i((int)((ocrData(0)-init_position(0))*sf), (int)(-(ocrData(1)-init_position(1))*sf));
-		mask1_p2 += Point2i((int)((ocrData(0)-init_position(0))*sf), (int)(-(ocrData(1)-init_position(1))*sf));
-
-		if (isMove)
-		{
-			angleVec.clear();
-			GenerateTableMask(xy_table, deg);
-			isMove = false;
-		}
+	void SetOCR(Vector3d _ocr);
+	void IncreaseTopMargin() {
+		table_topMargin += 10;
+		cout << "top margin (cm): " << table_topMargin*0.1 << endl;
+		for (int i=0;i<3;i++)
+			table_topPoint[i] = world_origin[i] + world_normal[i] * (table_height + table_topMargin);
+		transform->TransformPoint(table_topPoint, tf_table_topPoint);
 	}
+	void DecreaseTopMargin() {
+		table_topMargin -= 10;
+		if (table_topMargin < 0) table_topMargin = 0;
+		cout << "top margin (cm): " << table_topMargin*0.1 << endl;
+		for (int i=0;i<3;i++)
+			table_topPoint[i] = world_origin[i] + world_normal[i] * (table_height + table_topMargin);
+		transform->TransformPoint(table_topPoint, tf_table_topPoint);
+	}
+	void IncreaseBotMargin() {
+		table_botMargin += 10;
+		cout << "bot margin (cm): " << table_botMargin*0.1 << endl;
+		for (int i=0;i<3;i++)
+			table_botPoint[i] = world_origin[i] + world_normal[i] * (table_height - table_botMargin);
+		transform->TransformPoint(table_botPoint, tf_table_botPoint);
+	}
+	void DecreaseBotMargin() {
+		table_botMargin -= 10;
+		if (table_botMargin < 0) table_botMargin = 0;
+		cout << "bot margin (cm): " << table_botMargin*0.1 << endl;
+		for (int i=0;i<3;i++)
+			table_botPoint[i] = world_origin[i] + world_normal[i] * (table_height - table_botMargin);
+		transform->TransformPoint(table_botPoint, tf_table_botPoint);
+	}
+
+	// Configuration
+	void ReadConfigData(string fileName);
+	void ConfigVirtualCamera();
+	void ConfigTableData();
+	void ConfigMaskData();
+	void PrintConfigData();
+
+	// Mask
+	void GenerateRectangleTableMask();
+	void GenerateCustomTableMask();
+
+	// Tracking
+	cv::Mat GenerateTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t depth_image);
+	void ProcessCurrentFrame();
+	void Render(double time);
+	tuple<double, double, cv::Mat> MatchingData();
+
+
+	// Auxiliary Functions
+	double GetAngle() { return get<0>(match_results); }
+	void FindTableCenter();
+	cv::Mat GenerateColorTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t color_image);
+	void WritePointCloud(vector<RowVector3d> xyz, vector<RowVector3i> rgb);
 
 
 private:
-	vector<Point2i> pixelData;
-	// Mat, Image
-	Mat xy_table;
-	int width, height;
+	// Image data
 	k4a_image_t color_img, depth_img, point_img;
-	bool isColor;
+	double pixelPerLength;
+	int frameNo;
+	cv::Mat binPCD, colorPCD;
+	int image_width, image_height;
 
-	// Table
-	int pTable;
-	Vector3d init_position;
-	double lat_width, long_width, height_width, floor_height;
-	double top_margin, bot_margin;
-	float ext_topPoint[3], ext_botPoint[3];
-	Vector3d top_plane_point, bot_plane_point;
-	Point2i view_calib;
-	double sf;
-	vtkSmartPointer<vtkTransform> transform_mask;
+	// Mask
+	int mask_width, mask_height;
+	int mask_deg, mask_maxRotDeg, mask_minRotDeg;
+	cv::Mat mask;
+	uchar* mask_data;
+	int mask_sum;
+	vector<cv::Mat> mask_vec;
+	int mask_minX, mask_maxX, mask_minY, mask_maxY;
+
+	// Virtual Camera
+	vtkSmartPointer<vtkTransform> transform;
+	Vector3d vcam_position;
+	int vcam_pixel_x, vcam_pixel_y;
 
 	// World
-	Quaterniond quat;
-	Vector3d tvec;
-	float world_origin[3], world_normal[3];
-	vtkSmartPointer<vtkTransform> transform;
+	Quaterniond world_quat;
+	Vector3d world_trans;
+	double world_origin[3], world_normal[3];
+	double world_axisX[3], world_axisY[3], world_axisZ[3];
 
-	// Matching Masks
-	int deg, maxDeg;
-	Mat mask;
-	uchar* mask_data;
-	vector<Mat> maskVec;
-	tuple<double,double,Mat> results;
-	int maskSum;
-	bool isMove;
-	Vector3d ocrData;
-	vector<Point2i> maskPoints;
+	// Table
+	Vector3d table_rotCenter;
+	double table_position[3];
+	double table_width, table_length, table_height;
+	double table_centerPoint[3], table_topPoint[3], table_botPoint[3];
+	double table_topMargin, table_botMargin;
 
-	// Center
-	bool isCrop, isRot, isMask1, isMask2, isCenter, isFind;
-	Point2i mask1_p1, mask1_p2, mask2_p1, mask2_p2;
-	int transX, transY;
-	Point2i tableCenter;
-	Mat mask1, mask2;
-	double max_sim1, max_sim2;
-	Mat draw, view;
-	Vector3d axisX, axisY, axisZ;
-	Point2i tableCenter_init, mask1_p1_init, mask1_p2_init;
+	int table_position_pixel_x, table_position_pixel_y;
+	int table_rotCenter_pixel_x, table_rotCenter_pixel_y;
 
+	// Transformation
+	double tf_vcam_position[3];
+	double tf_world_origin[3], tf_world_normal[3];
+	double tf_world_axisX[3], tf_world_axisY[3], tf_world_axisZ[3];
+	double tf_table_centerPoint[3], tf_table_topPoint[3], tf_table_botPoint[3];
+	double tf_table_rotCenter[3];
+	double tf_table_position[3];
 
-	// Accumulate angle
-	int frameNo;
-	vector<double> angleVec;
-	double cumAvgAngle, frameAngle;
-	Mat binPCD;
+	// Results
+	tuple<double, double, cv::Mat> match_results;
+	tuple<double, double, cv::Mat> match_results_prev, match_results_filter;
+	vector<double> match_angleVec;
+	list<double> match_angleList, match_simList;
+	double mean_angle, mean_similarity;
 	ofstream ofs;
+
+	// OCR
+	Vector3d ocr;
+	bool isMove, isRot, isCheck, isFirst;
+
+
+
 
 };
 
 
-
-
-#endif /* INCLUDE_TABLETRACKER_HH_ */
+#endif

@@ -1,0 +1,37 @@
+%YAML:1.0
+World_Quaternion(x,y,z,w):
+   rows: 1
+   cols: 4
+   dt: d
+   data: [-0.894433, 0.00567477, -0.00250882, -0.447159]
+World_Translation(cm): 
+   rows: 1
+   cols: 3
+   dt: d
+   data: [-130.876, 92.2685, 268.569]
+VirtualCamera_Position(cm):
+   rows: 1
+   cols: 3
+   dt: d
+   data: [120, 100, 300]
+Table_Position(mm):
+   rows: 1
+   cols: 3
+   dt: d
+   data: [-281,-1149,3944]
+Table_RotationCenter(cm):
+   rows: 1
+   cols: 3
+   dt:   d
+   data: [150, 90, 0]
+Table_Width(cm): 50
+Table_Length(cm): 320
+Table_Height(cm): 95
+Table_TopMargin(cm): 50
+Table_BotMargin(cm): 20
+Mask_CropWidth(px): 500
+Mask_CropHeight(px): 500
+Mask_Rot(deg): 1
+Mask_MaxRot(deg): 90
+Mask_MinRot(deg): -90
+PixelPerLength(px/mm): 0.1

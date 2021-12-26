@@ -1,7 +1,12 @@
 #include "CharucoSync.hh"
 
+extern Rect cropRect;
+extern bool clicked;
+extern Point2i P1, P2;
+extern float sfInv;
+extern void onMouseCropImage(int event, int x, int y, int f, void *param);
+
 Eigen::Vector4d quaternionAverage(std::vector<Eigen::Vector4d> quaternions);
-extern Vector3d VectorRotatedByQuaternion(Vector3d v, Quaterniond q);
 
 CharucoSync::CharucoSync(int tableType)
     :pTable(tableType), getPose(false), sf(1), frameNo(0), isStack(false)
@@ -25,7 +30,8 @@ bool CharucoSync::SetParameters(string camParm, string detParam)
     switch((PatientTable)pTable)
 	{
 	case PatientTable::TestDevice:
-		board = cv::aruco::CharucoBoard::create(5, 7, 0.0300f, 0.0235f, dictionary);
+//		board = cv::aruco::CharucoBoard::create(5, 7, 0.0300f, 0.0235f, dictionary);
+		board = cv::aruco::CharucoBoard::create(5, 7, 0.0290f, 0.0230f, dictionary);
 		break;
 	case PatientTable::AlluraXper:
 		board = cv::aruco::CharucoBoard::create(5, 7, 0.0765f, 0.0535f, dictionary);
@@ -61,7 +67,6 @@ bool CharucoSync::SetParameters(string camParm, string detParam)
     return true;
 }
 
-extern Rect cropRect;
 void CharucoSync::EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec)
 {
     color.copyTo(display);
@@ -123,12 +128,19 @@ void CharucoSync::EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec)
                 	Quaterniond quat0 = Quaterniond(avg10_quat.w(), avg10_quat.x(), avg10_quat.y(), avg10_quat.z());
                 	Quaterniond quat1 = Quaterniond(q.w(), q.x(), q.y(), q.z());
 
-                	Vector3d axisX0 = VectorRotatedByQuaternion(Vector3d(1,0,0), quat0);
-					Vector3d axisY0 = VectorRotatedByQuaternion(Vector3d(0,1,0), quat0);
-					Vector3d axisZ0 = VectorRotatedByQuaternion(Vector3d(0,0,1), quat0);
-					Vector3d axisX1 = VectorRotatedByQuaternion(Vector3d(1,0,0), quat1);
-                    Vector3d axisY1 = VectorRotatedByQuaternion(Vector3d(0,1,0), quat1);
-                    Vector3d axisZ1 = VectorRotatedByQuaternion(Vector3d(0,0,1), quat1);
+//                	Vector3d axisX0 = VectorRotatedByQuaternion(Vector3d(1,0,0), quat0);
+//					Vector3d axisY0 = VectorRotatedByQuaternion(Vector3d(0,1,0), quat0);
+//					Vector3d axisZ0 = VectorRotatedByQuaternion(Vector3d(0,0,1), quat0);
+//					Vector3d axisX1 = VectorRotatedByQuaternion(Vector3d(1,0,0), quat1);
+//                  Vector3d axisY1 = VectorRotatedByQuaternion(Vector3d(0,1,0), quat1);
+//                  Vector3d axisZ1 = VectorRotatedByQuaternion(Vector3d(0,0,1), quat1);
+
+                	Vector3d axisX0 = quat0.matrix() * Vector3d::UnitX();
+					Vector3d axisY0 = quat0.matrix() * Vector3d::UnitY();
+					Vector3d axisZ0 = quat0.matrix() * Vector3d::UnitZ();
+					Vector3d axisX1 = quat1.matrix() * Vector3d::UnitX();
+                    Vector3d axisY1 = quat1.matrix() * Vector3d::UnitY();
+                    Vector3d axisZ1 = quat1.matrix() * Vector3d::UnitZ();
 
                     double dotX = axisX0.dot(axisX1);
 					double dotY = axisY0.dot(axisY1);
@@ -153,10 +165,6 @@ void CharucoSync::EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec)
     }
 }
 
-extern bool clicked;
-extern Point2i P1, P2;
-extern float sfInv;
-extern void onMouseCropImage(int event, int x, int y, int f, void *param);
 void CharucoSync::Render()
 {
     setMouseCallback("Synchronization", onMouseCropImage);

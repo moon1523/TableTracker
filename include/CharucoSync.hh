@@ -1,5 +1,5 @@
-#ifndef CharucoSync_hh
-#define CharucoSync_hh
+#ifndef CHARUCOSYNC_HH_
+#define CHARUCOSYNC_HH_
 
 #include <opencv2/aruco/charuco.hpp>
 #include <opencv2/highgui.hpp>

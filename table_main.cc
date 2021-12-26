@@ -3,13 +3,15 @@
 
 #include "TableTracker.hh"
 #include "CharucoSync.hh"
-#include "Kinect.hh"
+#include "Functions.hh"
+#include "matplotlibcpp.h"
+
+namespace plt = matplotlibcpp;
 
 int TABLE_TRACKING(int, char**);
 int CHARUCO_SYNC(int, char**);
 int RECORD_TRACKING(char*);
 int RECORD_CHARUCO_SYNC(char*);
-
 
 void PrintUsage()
 {
@@ -17,7 +19,7 @@ void PrintUsage()
     cout << "  ./table_tracker -track" << endl;
     cout << "  ./table_tracker -sync   [outputfile]" << endl;
     cout << "  ./table_tracker -rtrack [record.mkv]" << endl;
-    cout << "  ./table_tracker -rsync  [record.mkv]" << endl;
+    cout << "  ./table_tracker -rsync  [record.mkv]" << endl << endl;
 }
 
 
@@ -27,7 +29,7 @@ int main(int argc, char** argv)
 	if(argc > 1 && string(argv[1])=="-track")
 		return TABLE_TRACKING(argc, argv);
 	else if(argc > 1 && string(argv[1])=="-sync")
-		return CHARUCO_SYNC(argc,argv);
+		return CHARUCO_SYNC(argc, argv);
 	else if(argc > 1 && string(argv[1])=="-rtrack")
 		return RECORD_TRACKING(argv[2]);
 	else if(argc > 1 && string(argv[1])=="-rsync")
@@ -39,19 +41,175 @@ int main(int argc, char** argv)
 }
 
 
+int RECORD_TRACKING(char* fileName)
+{
+	cout << "== RECORD TRACKING =======================" << endl << endl;
+
+	int timestamp = 1000;
+	k4a_playback_t playback = NULL;
+	k4a_calibration_t calibration;
+	k4a_transformation_t transformation = NULL;
+	k4a_capture_t capture = NULL;
+	k4a_image_t depth_image = NULL;
+	k4a_image_t color_image = NULL;
+	k4a_image_t point_image = NULL;
+	k4a_image_t uncompressed_color_image = NULL;
+	k4a_image_t colorlike_depth_image = NULL;
+
+	k4a_result_t result;
+	k4a_stream_result_t stream_result;
+
+//	fileName = "./record/4_20210930/rotate2/table11.mkv";
+	result = k4a_playback_open(fileName, &playback);
+	if (result != K4A_RESULT_SUCCEEDED || playback == NULL) {
+		printf("Failed to open recording %s\n", fileName); exit(1);
+	}
+
+	result = k4a_playback_seek_timestamp(playback, timestamp * 1000, K4A_PLAYBACK_SEEK_BEGIN);
+	if (result != K4A_RESULT_SUCCEEDED)	{
+		printf("Failed to seek timestamp %d\n", timestamp); exit(1);
+	}
+
+	cout << "  >> Record Information" << endl;
+	printf("     1) Seeking to timestamp: %d/%d (ms)\n",
+		   timestamp,
+		   (int)(k4a_playback_get_recording_length_usec(playback) / 1000));
+
+	if (K4A_RESULT_SUCCEEDED != k4a_playback_get_calibration(playback, &calibration)) {
+		printf("Failed to get calibration\n"); exit(1);
+	}
+
+	cout << "     2) Record Length (s): " << (k4a_playback_get_recording_length_usec(playback) / (float)1000000) << endl;
+	transformation = k4a_transformation_create(&calibration);
+	int image_width  = calibration.color_camera_calibration.resolution_width;
+	int image_height = calibration.color_camera_calibration.resolution_height;
+
+	cout << "     3) Color resolution: " << calibration.color_camera_calibration.resolution_width << " x "
+								 << calibration.color_camera_calibration.resolution_height << endl;
+	cout << "     4) Depth resolution: " << calibration.depth_camera_calibration.resolution_width << " x "
+								 << calibration.depth_camera_calibration.resolution_height << endl << endl;
+
+	TableTracker tableTracker("./ConfigData2.yml", image_width, image_height);
+//	Vector3d ocr(0,0,0); // unit: mm
+	Vector3d ocr(-20,-140,0); // unit: mm
+//	Vector3d ocr(-200,-200,0); // unit: mm
+//	Vector3d ocr(-280,-960,0); // unit: mm
+
+	vector<double> x, y, xt(1), yt(1);
+
+	plt::xlim(0, 100);
+	plt::ylim(-100, 100);
+
+	plt::xlabel("Frame");
+	plt::ylabel("Angle (deg)");
+
+	plt::named_plot("sin", x,y);
+	plt::Plot plot("test");
+	plt::legend();
+
+
+//	cv::Mat mat = cv::Mat::zeros(500,500,CV_8UC3);
+//	uint8_t* mat_data = (uint8_t*)mat.data;
+//
+//	for (int y=10; y<100; y++) {
+//		for (int x=20; x<200; x++) {
+//			mat_data [ 3 * (y * 500 + x) + 0 ] = 153;
+//			mat_data [ 3 * (y * 500 + x) + 1 ] = 255;
+//		}
+//	}
+//	cv::imshow("hi", mat);
+//	cv::waitKey(0);
+
+
+	double time(0);
+	cout << "*** STREAM LOOP START !!" << endl;
+	while(true)
+	{
+		Timer timer; timer.start();
+		stream_result = k4a_playback_get_next_capture(playback, &capture);
+		if (stream_result == K4A_STREAM_RESULT_EOF) {
+			cout << "Last capture" << endl; break;
+		}
+		depth_image = k4a_capture_get_depth_image(capture);
+		color_image = k4a_capture_get_color_image(capture);
+		uncompressed_color_image = Convert_Color_MJPG_To_BGRA(color_image);
+		point_image = create_point_cloud_based_color(uncompressed_color_image);
+		colorlike_depth_image = create_depth_image_like(uncompressed_color_image);
+		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
+		k4a_transformation_depth_image_to_point_cloud(transformation, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
+
+
+		tableTracker.SetOCR(ocr);
+		tableTracker.SetNewImage(uncompressed_color_image, depth_image, point_image);
+//		tableTracker.SetNewImage(depth_image, point_image);
+		tableTracker.ProcessCurrentFrame();
+
+
+		cv::Mat color(image_height, image_width, CV_8UC3, cv::Scalar(0,0,0));
+        uchar* color_data = color.data;
+        uint8_t *color_image_data = k4a_image_get_buffer(uncompressed_color_image);
+
+        for (int i=0;i<image_width*image_height; i++) {
+        	color_data[ 3 * i + 0 ] = color_image_data[ 4 * i + 0 ];
+			color_data[ 3 * i + 1 ] = color_image_data[ 4 * i + 1 ];
+			color_data[ 3 * i + 2 ] = color_image_data[ 4 * i + 2 ];
+        }
+
+		k4a_capture_release(capture);
+		k4a_image_release(color_image);
+		k4a_image_release(depth_image);
+		k4a_image_release(uncompressed_color_image);
+		k4a_image_release(point_image);
+		k4a_image_release(colorlike_depth_image);
+
+		timer.stop();
+
+		double angle = tableTracker.GetAngle();
+		yt[0] = angle;
+		xt[0] += timer.time();
+
+		plot.update(xt, yt);
+
+		cv::imshow("color", color);
+		tableTracker.Render(timer.time());
+
+
+		char key = (char)waitKey(1);
+		if (key == 'g') {
+			cout << "Generate Point Cloud Data" << endl;
+			transformation_helpers_write_point_cloud(point_image, uncompressed_color_image, "pcd.ply");
+		}
+		else if (key == 'o') {
+			tableTracker.DecreaseBotMargin();
+		}
+		else if (key == 'p') {
+			tableTracker.IncreaseBotMargin();
+		}
+		else if (key == '[') {
+			tableTracker.DecreaseTopMargin();
+		}
+		else if (key == ']') {
+			tableTracker.IncreaseTopMargin();
+		}
+		else if (key == 's') {
+			cout <<"Set the OCR data (lateral, longitudinal, height, unit: mm) " << endl;
+			cin >> ocr(0) >> ocr(1) >> ocr(2);
+		}
+		else if (key == 'q') {
+			break;
+		}
+	}
+	k4a_transformation_destroy(transformation);
+	k4a_playback_close(playback);
+
+	return EXIT_SUCCESS;
+}
+
 
 
 int TABLE_TRACKING(int argc, char** argv)
 {
-	cout << "### TABLE TRACKING" << endl;
-	bool isColor(false), isCenter(false);
-	cout << "#1 Select tracking type (0: Depth, 1: Color) ==> "; cin >> isColor;
-	if (!isColor)  cout << "   Table tracking w/ depth image" << endl;
-	else           cout << "   Table tracking w/ color image (Don't use it clinically)" << endl;
-	cout << "#2 Would you read the table center file? (0: No, 1: Yes) ==> "; cin >> isCenter;
-	if (!isCenter) cout << "   Function \"FindTableCenter()\" is set" << endl;
-	else           cout << "   Read table center file" << endl;
-	cout << endl;
+	cout << "== TABLE TRACKING =======================" << endl << endl;
 
 	// Start camera
 	k4a_device_t device = nullptr;
@@ -74,79 +232,84 @@ int TABLE_TRACKING(int argc, char** argv)
 	k4a_transformation_t k4aTransform = NULL;
 	k4aTransform = k4a_transformation_create(&sensorCalibration);
 
-	auto qtData = ReadCharucoData("./Coord/20210804_LAB");
-	Mat xy_table = create_color_xy_table(sensorCalibration); // xy_table is just set width/height of image in TableTracker class.
-	TableTracker tableTracker((int)PatientTable::TestDevice, xy_table, qtData.first, qtData.second);
-	if(isColor) tableTracker.SetIsColor(isColor);
-	if(isCenter) tableTracker.SetTableCenter(ReadTableCenterData("TableCenter.txt"));
+	int image_width  = sensorCalibration.color_camera_calibration.resolution_width;
+	int image_height = sensorCalibration.color_camera_calibration.resolution_height;
 
+	TableTracker tableTracker("./ConfigData_test.yml", image_width,image_height);
+	Vector3d ocr(0,0,0); // lat, long, height
 	cout << ">> Table Tracking" << endl;
-	while(1)
+
+
+	while(true)
 	{
-		Timer frameTime; frameTime.start();
+		Timer timer; timer.start();
 
 		// Capture image
 		k4a_device_get_capture(device, &sensorCapture, 1000);
 		color_image = k4a_capture_get_color_image(sensorCapture);
 		depth_image = k4a_capture_get_depth_image(sensorCapture);
-		point_image = create_point_cloud_based(color_image);
+		point_image = create_point_cloud_based_color(color_image);
 		colorlike_depth_image = create_depth_image_like(color_image);
 		k4a_transformation_depth_image_to_color_camera(k4aTransform, depth_image, colorlike_depth_image);
 		k4a_transformation_depth_image_to_point_cloud(k4aTransform, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
 
-		// Read OCR data
-		Vector3d ocrDat(0,0,0); // lat, long, height
-		//
+		tableTracker.SetOCR(ocr);
+		tableTracker.SetNewImage(color_image, depth_image, point_image);
+		tableTracker.ProcessCurrentFrame();
 
-		// View option (color, depth)
-		if (isColor) tableTracker.SetColorImage(color_image, point_image);
-		else         tableTracker.SetNewImage(colorlike_depth_image, point_image);
-		if(!isCenter)
-		{
-			// If table center is not set, find table center w/ 0,90 degree masks
-			isCenter = tableTracker.FindTableCenter();
-		}
-		else
-		{
-			// Main Tracking
-			tableTracker.TransMatchingMasks(ocrDat);
-			tableTracker.ProcessCurrentFrame();
-			frameTime.stop();
-			tableTracker.Render(frameTime.time());
-		}
+		cv::Mat color(image_height, image_width, CV_8UC3, cv::Scalar(0,0,0));
+        uchar* color_data = color.data;
+        uint8_t *color_image_data = k4a_image_get_buffer(color_image);
+
+        for (int i=0;i<image_width*image_height; i++) {
+        	color_data[ 3 * i + 0 ] = color_image_data[ 4 * i + 0 ];
+			color_data[ 3 * i + 1 ] = color_image_data[ 4 * i + 1 ];
+			color_data[ 3 * i + 2 ] = color_image_data[ 4 * i + 2 ];
+        }
+
+
+		k4a_capture_release(sensorCapture);
+		k4a_image_release(color_image);
+		k4a_image_release(depth_image);
+		k4a_image_release(colorlike_depth_image);
+		k4a_image_release(point_image);
+
+		timer.stop();
+		tableTracker.Render(timer.time());
+		cv::imshow("color", color);
 
 		char key = (char)waitKey(1);
 		if (key == 'g') {
 			cout << "Generate Point Cloud Data" << endl;
 			transformation_helpers_write_point_cloud(point_image, color_image, "pcd.ply");
 		}
+		else if (key == 'o') {
+			tableTracker.DecreaseBotMargin();
+		}
+		else if (key == 'p') {
+			tableTracker.IncreaseBotMargin();
+		}
+		else if (key == '[') {
+			tableTracker.DecreaseTopMargin();
+		}
+		else if (key == ']') {
+			tableTracker.IncreaseTopMargin();
+		}
 		else if (key == 's') {
-			cout <<" Set the OCR data (lateral, longitudianl, height, unit: mm) " << endl;
-			cin >> ocrDat(0) >> ocrDat(1) >> ocrDat(2);
-			tableTracker.TransMatchingMasks(ocrDat);
+			cout <<"Set the OCR data (lateral, longitudinal, height, unit: mm) " << endl;
+			cin >> ocr(0) >> ocr(1) >> ocr(2);
 		}
 		else if (key == 'q') {
 			break;
 		}
 
-		// Release the memory
-		k4a_image_release(color_image);
-		k4a_image_release(depth_image);
-		k4a_image_release(colorlike_depth_image);
-		k4a_image_release(point_image);
-		k4a_capture_release(sensorCapture);
 	}
 
 	k4a_transformation_destroy(k4aTransform);
 	k4a_device_close(device);
-	cout << ">> EXIT_SUCCESS" << endl;
 
 	return EXIT_SUCCESS;
 }
-
-
-
-
 
 int CHARUCO_SYNC(int argc, char** argv)
 {
@@ -232,122 +395,6 @@ int CHARUCO_SYNC(int argc, char** argv)
 	return EXIT_SUCCESS;
 }
 
-int RECORD_TRACKING(char* fileName)
-{
-	cout << ">> Playback Record" << endl;
-	bool isColor(false), isCenter(false);
-	cout << "#1 Select tracking type (0: Depth, 1: Color) ==> "; cin >> isColor;
-	if (!isColor)  cout << "   Table tracking w/ depth image" << endl;
-	else           cout << "   Table tracking w/ color image (Don't use it clinically)" << endl;
-	cout << "#2 Would you read the table center file? (0: No, 1: Yes) ==> "; cin >> isCenter;
-	if (!isCenter) cout << "   Function \"FindTableCenter()\" is set" << endl;
-	else           cout << "   Read table center file" << endl;
-	cout << endl;
-
-	int timestamp = 1000;
-	k4a_playback_t playback = NULL;
-	k4a_calibration_t calibration;
-	k4a_transformation_t transformation = NULL;
-	k4a_capture_t capture = NULL;
-	k4a_image_t depth_image = NULL;
-	k4a_image_t color_image = NULL;
-	k4a_image_t point_image = NULL;
-	k4a_image_t uncompressed_color_image = NULL;
-	k4a_image_t colorlike_depth_image = NULL;
-
-	k4a_result_t result;
-	k4a_stream_result_t stream_result;
-
-	result = k4a_playback_open(fileName, &playback);
-	if (result != K4A_RESULT_SUCCEEDED || playback == NULL) {
-		printf("Failed to open recording %s\n", fileName); exit(1);
-	}
-
-	result = k4a_playback_seek_timestamp(playback, timestamp * 1000, K4A_PLAYBACK_SEEK_BEGIN);
-	if (result != K4A_RESULT_SUCCEEDED)	{
-		printf("Failed to seek timestamp %d\n", timestamp); exit(1);
-	}
-	cout << ">> Record Information" << endl;
-	printf("   Seeking to timestamp: %d/%d (ms)\n",
-		   timestamp,
-		   (int)(k4a_playback_get_recording_length_usec(playback) / 1000));
-
-	if (K4A_RESULT_SUCCEEDED != k4a_playback_get_calibration(playback, &calibration)) {
-		printf("Failed to get calibration\n"); exit(1);
-	}
-	cout << "   Record Length (s): " << (k4a_playback_get_recording_length_usec(playback) / (float)1000000) << endl;
-	transformation = k4a_transformation_create(&calibration);
-	cout << "   Color resolution: " << calibration.color_camera_calibration.resolution_width << " x "
-								 << calibration.color_camera_calibration.resolution_height << endl;
-	cout << "   Depth resolution: " << calibration.depth_camera_calibration.resolution_width << " x "
-								 << calibration.depth_camera_calibration.resolution_height << endl << endl;
-
-
-	auto qtData = ReadCharucoData("./Coord/20210728_OR");
-	Mat xy_table = create_color_xy_table(calibration);
-	TableTracker tableTracker((int)PatientTable::AlluraXper, xy_table, qtData.first, qtData.second);
-	if(isColor) tableTracker.SetIsColor(isColor);
-	if(isCenter) tableTracker.SetTableCenter(ReadTableCenterData("TableCenter_OR.txt"));
-
-	Vector3d ocrDat(0,0,0); // lat, long, height
-	cout << ">> Stream loop start !!" << endl;
-	while(1)
-	{
-		Timer frameTime; frameTime.start();
-		stream_result = k4a_playback_get_next_capture(playback, &capture);
-		if (stream_result == K4A_STREAM_RESULT_EOF) {
-			cout << "   Last capture" << endl; break;
-		}
-		depth_image = k4a_capture_get_depth_image(capture);
-		color_image = k4a_capture_get_color_image(capture);
-		uncompressed_color_image = Convert_Color_MJPG_To_BGRA(color_image);
-		point_image = create_point_cloud_based(uncompressed_color_image);
-		colorlike_depth_image = create_depth_image_like(uncompressed_color_image);
-		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
-		k4a_transformation_depth_image_to_point_cloud(transformation, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
-
-		if (isColor) tableTracker.SetColorImage(uncompressed_color_image, point_image);
-		else         tableTracker.SetNewImage(colorlike_depth_image, point_image);
-		if(!isCenter)
-		{
-			isCenter = tableTracker.FindTableCenter();
-		}
-		else
-		{
-			tableTracker.TransMatchingMasks(ocrDat);
-			tableTracker.ProcessCurrentFrame();
-			frameTime.stop();
-			tableTracker.Render(frameTime.time());
-		}
-
-		char key = (char)waitKey(1); // FPS
-		if (key == 'g') {
-			cout << "Generate Point Cloud Data" << endl;
-			transformation_helpers_write_point_cloud(point_image,uncompressed_color_image, "pcd.ply");
-		}
-		else if (key == 's') {
-			cout <<" Set the OCR data (lateral, longitudianl, height, unit: mm) " << endl;
-			cin >> ocrDat(0) >> ocrDat(1) >> ocrDat(2);
-			tableTracker.TransMatchingMasks(ocrDat);
-		}
-		else if (key == 'q') {
-			break;
-		}
-
-		k4a_capture_release(capture);
-		k4a_image_release(color_image);
-		k4a_image_release(depth_image);
-		k4a_image_release(uncompressed_color_image);
-		k4a_image_release(point_image);
-		k4a_image_release(colorlike_depth_image);
-	}
-	k4a_playback_close(playback);
-
-	return EXIT_SUCCESS;
-}
-
-
-
 
 int RECORD_CHARUCO_SYNC(char* fileName)
 {
@@ -410,7 +457,7 @@ int RECORD_CHARUCO_SYNC(char* fileName)
 		color_image = k4a_capture_get_color_image(capture);
 		uncompressed_color_image = Convert_Color_MJPG_To_BGRA(color_image);
 		depth_image = k4a_capture_get_depth_image(capture);
-		point_image = create_point_cloud_based(uncompressed_color_image);
+		point_image = create_point_cloud_based_color(uncompressed_color_image);
 		colorlike_depth_image = create_depth_image_like(uncompressed_color_image);
 		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
 		k4a_transformation_depth_image_to_point_cloud(transformation, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
@@ -453,7 +500,7 @@ int RECORD_CHARUCO_SYNC(char* fileName)
 
 	return EXIT_SUCCESS;
 }
-
-
-
-
+//
+//
+//
+//

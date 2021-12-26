@@ -1,27 +1,10 @@
-#pragma once
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-#include <algorithm>
-#include <iostream>
-#include <vector>
-#include <string>
-#include <chrono>
-#include <limits>
-
-#include <k4a/k4a.hpp>
-#include <k4arecord/playback.h>
-#include <Utilities.h>
-#include <turbojpeg.h>
-
-#include <opencv2/calib3d.hpp>
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/highgui.hpp>
+#include "Functions.hh"
 
 
-using namespace std;
 
-static k4a_device_configuration_t get_default_config()
+
+
+k4a_device_configuration_t get_default_config()
 {
 	k4a_device_configuration_t camera_config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
 	camera_config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
@@ -34,7 +17,7 @@ static k4a_device_configuration_t get_default_config()
 	return camera_config;
 }
 
-static cv::Mat color_to_opencv(const k4a_image_t im)
+cv::Mat color_to_opencv(const k4a_image_t im)
 {
 	cv::Mat cv_image_with_alpha(k4a_image_get_height_pixels(im), k4a_image_get_width_pixels(im), CV_8UC4, (void*)k4a_image_get_buffer(im));
     cv::Mat cv_image_no_alpha;
@@ -42,7 +25,7 @@ static cv::Mat color_to_opencv(const k4a_image_t im)
     return cv_image_no_alpha;
 }
 
-static cv::Mat depth_to_opencv(const k4a_image_t im)
+cv::Mat depth_to_opencv(const k4a_image_t im)
 {
     return cv::Mat(k4a_image_get_height_pixels(im),
     			   k4a_image_get_width_pixels(im),
@@ -53,7 +36,7 @@ static cv::Mat depth_to_opencv(const k4a_image_t im)
 
 
 
-static k4a_image_t color_to_depth(k4a_transformation_t transformation_handle,
+k4a_image_t color_to_depth(k4a_transformation_t transformation_handle,
 									   const k4a_image_t depth_image,
 									   const k4a_image_t color_image)
 {
@@ -82,7 +65,7 @@ static k4a_image_t color_to_depth(k4a_transformation_t transformation_handle,
     return transformed_color_image;
 }
 
-static k4a_image_t create_depth_image_like(const k4a_image_t im)
+k4a_image_t create_depth_image_like(const k4a_image_t im)
 {
 	k4a_image_t img;
 	k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16,
@@ -93,7 +76,7 @@ static k4a_image_t create_depth_image_like(const k4a_image_t im)
 	return img;
 }
 
-static k4a_image_t create_color_image_like(const k4a_image_t im)
+k4a_image_t create_color_image_like(const k4a_image_t im)
 {
 	k4a_image_t img;
 	k4a_image_create(K4A_IMAGE_FORMAT_COLOR_BGRA32,
@@ -103,7 +86,7 @@ static k4a_image_t create_color_image_like(const k4a_image_t im)
 					 &img);
 	return img;
 }
-static k4a_image_t create_point_cloud_based(const k4a_image_t im)
+k4a_image_t create_point_cloud_based_color(const k4a_image_t im)
 {
 	k4a_image_t img;
 
@@ -115,8 +98,20 @@ static k4a_image_t create_point_cloud_based(const k4a_image_t im)
 	return img;
 }
 
+k4a_image_t create_point_cloud_based_depth(const k4a_image_t im)
+{
+	k4a_image_t img;
 
-static cv::Mat create_color_xy_table(const k4a_calibration_t calibration)
+	k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
+					 k4a_image_get_width_pixels(im),
+					 k4a_image_get_height_pixels(im),
+					 k4a_image_get_width_pixels(im) * 1 * (int)sizeof(int16_t),
+					 &img);
+	return img;
+}
+
+
+cv::Mat create_color_xy_table(const k4a_calibration_t calibration)
 {
 	k4a_float2_t p;
 	k4a_float3_t ray;
@@ -146,43 +141,6 @@ static cv::Mat create_color_xy_table(const k4a_calibration_t calibration)
 	}
 	return xy_table;
 }
-
-//static cv::Mat create_depth_xy_table(const k4a_calibration_t calibration)
-//{
-//	k4a_float2_t p;
-//	k4a_float3_t ray;
-//
-//	int width = calibration.depth_camera_calibration.resolution_width;
-//	int height = calibration.depth_camera_calibration.resolution_height;
-//
-//	cv::Mat xy_table = cv::Mat::zeros(height,width, CV_32FC2);
-//	float* xy_table_data = (float*)xy_table.data;
-//	int valid;
-//
-//	for (int y = 0, idx = 0; y < height; y++)
-//	{
-//		p.xy.y = (float)y;
-//		for (int x = 0; x < width; x++, idx++)
-//		{
-//			p.xy.x = (float)x;
-//			k4a_calibration_2d_to_3d(&calibration, &p, 1.f, K4A_CALIBRATION_TYPE_DEPTH, K4A_CALIBRATION_TYPE_DEPTH, &ray, &valid);
-//			if (valid) {
-//				xy_table_data[idx*2] = ray.xyz.x;
-//				xy_table_data[idx*2+1] = ray.xyz.y;
-//			} else {
-//				xy_table_data[idx*2] = nanf("");
-//				xy_table_data[idx*2+1] = nanf("");
-//			}
-//		}
-//	}
-//	return xy_table;
-//}
-
-struct color_point_t
-{
-    int16_t xyz[3];
-    uint8_t rgb[3];
-};
 
 void transformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image,
                                               const k4a_image_t color_image,
