@@ -73,6 +73,9 @@ public:
 	TableTracker(string config_file, int image_width, int image_height);
 	~TableTracker();
 
+	void ColorView(bool _isColorView) { isColorView = _isColorView; }
+	void MaskView(bool _isMaskView) { isMaskView = _isMaskView; }
+
 	void SetNewImage(k4a_image_t depth_image, k4a_image_t point_image) {
 		depth_img = depth_image;
 		point_img = point_image;
@@ -123,7 +126,6 @@ public:
 
 	// Mask
 	void GenerateRectangleTableMask();
-	void GenerateCustomTableMask();
 
 	// Tracking
 	cv::Mat GenerateTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t depth_image);
@@ -133,13 +135,14 @@ public:
 
 
 	// Auxiliary Functions
-	double GetAngle() { return get<0>(match_results); }
-	void FindTableCenter();
 	cv::Mat GenerateColorTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t color_image);
 	void WritePointCloud(vector<RowVector3d> xyz, vector<RowVector3i> rgb);
 
 
 private:
+	// View
+	bool isColorView, isMaskView;
+
 	// Image data
 	k4a_image_t color_img, depth_img, point_img;
 	double pixelPerLength;
@@ -150,10 +153,11 @@ private:
 	// Mask
 	int mask_width, mask_height;
 	int mask_deg, mask_maxRotDeg, mask_minRotDeg;
-	cv::Mat mask;
+	cv::Mat mask, mask_color;
 	uchar* mask_data;
+	uchar* mask_color_data;
 	int mask_sum;
-	vector<cv::Mat> mask_vec;
+	vector<cv::Mat> mask_vec, mask_color_vec;
 	int mask_minX, mask_maxX, mask_minY, mask_maxY;
 
 	// Virtual Camera
@@ -186,18 +190,24 @@ private:
 	double tf_table_position[3];
 
 	// Results
-	tuple<double, double, cv::Mat> match_results;
-	tuple<double, double, cv::Mat> match_results_prev, match_results_filter;
-	vector<double> match_angleVec;
-	list<double> match_angleList, match_simList;
-	double mean_angle, mean_similarity;
+	tuple<double, double, cv::Mat> match_results_raw, match_results_raw_prev;
+	tuple<double, double, cv::Mat> match_results, match_results_prev;
+	tuple<double, double, cv::Mat> match_results_filtered;
+
+
+	list<double> match_angleList;
 	ofstream ofs;
 
 	// OCR
 	Vector3d ocr;
-	bool isMove, isRot, isCheck, isFirst;
+	bool isMove, isRot, isSpike, isFirst, isFix;
+	int spike_chk;
+	vector<double> spike_vec;
+	int frameNo_prev;
 
+	double mean, mean_prev, first_element;
 
+	cv::Mat match_xor_color;
 
 
 };

@@ -4,9 +4,6 @@
 #include "TableTracker.hh"
 #include "CharucoSync.hh"
 #include "Functions.hh"
-#include "matplotlibcpp.h"
-
-namespace plt = matplotlibcpp;
 
 int TABLE_TRACKING(int, char**);
 int CHARUCO_SYNC(int, char**);
@@ -16,8 +13,8 @@ int RECORD_CHARUCO_SYNC(char*);
 void PrintUsage()
 {
     cout << ">> Usage" << endl;
-    cout << "  ./table_tracker -track" << endl;
-    cout << "  ./table_tracker -sync   [outputfile]" << endl;
+    cout << "  ./table_tracker -track  [output]" << endl;
+    cout << "  ./table_tracker -sync   [output]" << endl;
     cout << "  ./table_tracker -rtrack [record.mkv]" << endl;
     cout << "  ./table_tracker -rsync  [record.mkv]" << endl << endl;
 }
@@ -95,34 +92,10 @@ int RECORD_TRACKING(char* fileName)
 //	Vector3d ocr(-200,-200,0); // unit: mm
 //	Vector3d ocr(-280,-960,0); // unit: mm
 
-	vector<double> x, y, xt(1), yt(1);
-
-	plt::xlim(0, 100);
-	plt::ylim(-100, 100);
-
-	plt::xlabel("Frame");
-	plt::ylabel("Angle (deg)");
-
-	plt::named_plot("sin", x,y);
-	plt::Plot plot("test");
-	plt::legend();
-
-
-//	cv::Mat mat = cv::Mat::zeros(500,500,CV_8UC3);
-//	uint8_t* mat_data = (uint8_t*)mat.data;
-//
-//	for (int y=10; y<100; y++) {
-//		for (int x=20; x<200; x++) {
-//			mat_data [ 3 * (y * 500 + x) + 0 ] = 153;
-//			mat_data [ 3 * (y * 500 + x) + 1 ] = 255;
-//		}
-//	}
-//	cv::imshow("hi", mat);
-//	cv::waitKey(0);
-
-
 	double time(0);
 	cout << "*** STREAM LOOP START !!" << endl;
+//	tableTracker.ColorView(true);
+	tableTracker.MaskView(true);
 	while(true)
 	{
 		Timer timer; timer.start();
@@ -141,7 +114,6 @@ int RECORD_TRACKING(char* fileName)
 
 		tableTracker.SetOCR(ocr);
 		tableTracker.SetNewImage(uncompressed_color_image, depth_image, point_image);
-//		tableTracker.SetNewImage(depth_image, point_image);
 		tableTracker.ProcessCurrentFrame();
 
 
@@ -155,23 +127,9 @@ int RECORD_TRACKING(char* fileName)
 			color_data[ 3 * i + 2 ] = color_image_data[ 4 * i + 2 ];
         }
 
-		k4a_capture_release(capture);
-		k4a_image_release(color_image);
-		k4a_image_release(depth_image);
-		k4a_image_release(uncompressed_color_image);
-		k4a_image_release(point_image);
-		k4a_image_release(colorlike_depth_image);
-
 		timer.stop();
-
-		double angle = tableTracker.GetAngle();
-		yt[0] = angle;
-		xt[0] += timer.time();
-
-		plot.update(xt, yt);
-
-		cv::imshow("color", color);
 		tableTracker.Render(timer.time());
+		cv::imshow("color", color);
 
 
 		char key = (char)waitKey(1);
@@ -198,6 +156,13 @@ int RECORD_TRACKING(char* fileName)
 		else if (key == 'q') {
 			break;
 		}
+
+		k4a_capture_release(capture);
+		k4a_image_release(color_image);
+		k4a_image_release(depth_image);
+		k4a_image_release(uncompressed_color_image);
+		k4a_image_release(point_image);
+		k4a_image_release(colorlike_depth_image);
 	}
 	k4a_transformation_destroy(transformation);
 	k4a_playback_close(playback);
@@ -235,10 +200,9 @@ int TABLE_TRACKING(int argc, char** argv)
 	int image_width  = sensorCalibration.color_camera_calibration.resolution_width;
 	int image_height = sensorCalibration.color_camera_calibration.resolution_height;
 
-	TableTracker tableTracker("./ConfigData_test.yml", image_width,image_height);
+	TableTracker tableTracker("./ConfigData_test2.yml", image_width,image_height);
 	Vector3d ocr(0,0,0); // lat, long, height
 	cout << ">> Table Tracking" << endl;
-
 
 	while(true)
 	{
@@ -266,13 +230,6 @@ int TABLE_TRACKING(int argc, char** argv)
 			color_data[ 3 * i + 1 ] = color_image_data[ 4 * i + 1 ];
 			color_data[ 3 * i + 2 ] = color_image_data[ 4 * i + 2 ];
         }
-
-
-		k4a_capture_release(sensorCapture);
-		k4a_image_release(color_image);
-		k4a_image_release(depth_image);
-		k4a_image_release(colorlike_depth_image);
-		k4a_image_release(point_image);
 
 		timer.stop();
 		tableTracker.Render(timer.time());
@@ -302,6 +259,12 @@ int TABLE_TRACKING(int argc, char** argv)
 		else if (key == 'q') {
 			break;
 		}
+
+		k4a_capture_release(sensorCapture);
+		k4a_image_release(color_image);
+		k4a_image_release(depth_image);
+		k4a_image_release(colorlike_depth_image);
+		k4a_image_release(point_image);
 
 	}
 
@@ -349,7 +312,7 @@ int CHARUCO_SYNC(int argc, char** argv)
 	sync.SetScalingFactor(0.4f);
 	bool getData(false);
 	waitKey(1000);
-	while (1)
+	while(true)
 	{
 		k4a_capture_t sensorCapture = nullptr;
 		k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
@@ -448,7 +411,7 @@ int RECORD_CHARUCO_SYNC(char* fileName)
 	bool getData(false);
 	waitKey(1000);
 
-	while (1)
+	while(true)
 	{
 		stream_result = k4a_playback_get_next_capture(playback, &capture);
 		if (stream_result == K4A_STREAM_RESULT_EOF) {

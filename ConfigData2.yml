@@ -13,7 +13,7 @@ VirtualCamera_Position(cm):
    rows: 1
    cols: 3
    dt: d
-   data: [120, 400, 300]
+   data: [100, 50, 300]
 Table_Position(mm):
    rows: 1
    cols: 3
@@ -24,14 +24,14 @@ Table_RotationCenter(cm):
    cols: 3
    dt:   d
    data: [113.424, 43.16411, 88.9577]
-Table_Width(cm): 55
+Table_Width(cm): 60
 Table_Length(cm): 320
 Table_Height(cm): 95
-Table_TopMargin(cm): 30
+Table_TopMargin(cm): 20
 Table_BotMargin(cm): 15
 Mask_CropWidth(px): 500
 Mask_CropHeight(px): 500
 Mask_Rot(deg): 1
-Mask_MaxRot(deg): 90
-Mask_MinRot(deg): -90
+Mask_MaxRot(deg): 40
+Mask_MinRot(deg): -40
 PixelPerLength(px/mm): 0.1

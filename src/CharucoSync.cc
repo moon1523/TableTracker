@@ -1,10 +1,10 @@
 #include "CharucoSync.hh"
 
-extern Rect cropRect;
-extern bool clicked;
-extern Point2i P1, P2;
-extern float sfInv;
-extern void onMouseCropImage(int event, int x, int y, int f, void *param);
+Rect cropRect;
+bool clicked;
+Point2i P1, P2;
+float sfInv;
+void onMouseCropImage(int event, int x, int y, int f, void *param);
 
 Eigen::Vector4d quaternionAverage(std::vector<Eigen::Vector4d> quaternions);
 
@@ -174,8 +174,9 @@ void CharucoSync::Render()
         imshow("crop img.", display(cropRect));
         cv::rectangle(display, cropRect, CV_RGB(255, 255, 0), 3);
     }
+
     resize(display, display, Size(display.cols * sf, display.rows * sf));
-//    putText(display, "number of data: "+to_string(quaternions.size()), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
+
     if (frameNo>10)
     	putText(display, "number of data: " + to_string(frameNo-10) , Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
     if(getPose) 
@@ -204,8 +205,8 @@ void CharucoSync::WriteTransformationData(string fileName){
     ofstream ofs(fileName);
     Vector4d q = quaternionAverage(quaternions);
     Vec3d t = tvec_sum / (double)quaternions.size();
-    ofs<<"q "<< q(0) <<" "<<q(1)<<" "<<q(2)<<" "<<q(3)<<endl;
-    ofs<<"t "<<t(0)*100<<" "<<t(1)*100<<" "<<t(2)*100<<endl;
+    ofs<<"q "<< q(0) <<", "<<q(1)<<", "<<q(2)<<", "<<q(3)<<endl;
+    ofs<<"t "<<t(0)*100<<", "<<t(1)*100<<", "<<t(2)*100<<endl;
     time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
     ofs<<ctime(&now)<<endl;
     ofs<<endl;
@@ -213,6 +214,8 @@ void CharucoSync::WriteTransformationData(string fileName){
 
 void CharucoSync::SetScalingFactor(float s)
 {
+    if (display.cols > 1920 || display.rows < 1080)
+        s *= 0.7;
     sf = s;
     sfInv = 1 / s;
 }
@@ -268,3 +271,67 @@ Eigen::Vector4d quaternionAverage(std::vector<Eigen::Vector4d> quaternions)
 
     return average;
 }
+
+
+void onMouseCropImage(int event, int x, int y, int f, void *param)
+{
+    switch (event)
+    {
+    case cv::EVENT_LBUTTONDOWN:
+        clicked = true;
+        P1.x = x * sfInv;
+        P1.y = y * sfInv;
+        P2.x = x * sfInv;
+        P2.y = y * sfInv;
+        break;
+    case cv::EVENT_LBUTTONUP:
+        P2.x = x * sfInv;
+        P2.y = y * sfInv;
+        clicked = false;
+        break;
+    case cv::EVENT_MOUSEMOVE:
+        if (clicked)
+        {
+            P2.x = x * sfInv;
+            P2.y = y * sfInv;
+        }
+        break;
+    case cv::EVENT_RBUTTONUP:
+        clicked = false;
+        P1.x = 0;
+        P1.y = 0;
+        P2.x = 0;
+        P2.y = 0;
+        break;
+    default:
+        break;
+    }
+
+    if (clicked)
+    {
+        if (P1.x > P2.x)
+        {
+            cropRect.x = P2.x;
+            cropRect.width = P1.x - P2.x;
+        }
+        else
+        {
+            cropRect.x = P1.x;
+            cropRect.width = P2.x - P1.x;
+        }
+
+        if (P1.y > P2.y)
+        {
+            cropRect.y = P2.y;
+            cropRect.height = P1.y = P2.y;
+        }
+        else
+        {
+            cropRect.y = P1.y;
+            cropRect.height = P2.y - P1.y;
+        }
+    }
+}
+
+
+
