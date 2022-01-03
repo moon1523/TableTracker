@@ -14,11 +14,11 @@ VirtualCamera_Position(cm):
    cols: 3
    dt: d
    data: [100, 50, 300]
-Table_Position(mm):
+Table_Position(cm):
    rows: 1
    cols: 3
    dt: d
-   data: [-430.779,-702.693,5143.028]
+   data: [92.995, 79.006, 85.1807]
 Table_RotationCenter(cm):
    rows: 1
    cols: 3

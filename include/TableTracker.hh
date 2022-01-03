@@ -135,13 +135,17 @@ public:
 
 
 	// Auxiliary Functions
+	void GeneratePointCloudFile() {
+		cout << "Generate Point Cloud PLY file: " << frameNo << ".ply/tf_ply" << endl;
+		isPCDFile = true;
+	}
 	cv::Mat GenerateColorTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t color_image);
-	void WritePointCloud(vector<RowVector3d> xyz, vector<RowVector3i> rgb);
+	void WritePointCloud(vector<RowVector3d> xyz, vector<RowVector3d> tf_xyz, vector<RowVector3i> rgb);
 
 
 private:
 	// View
-	bool isColorView, isMaskView;
+	bool isColorView, isMaskView, isPCDFile;
 
 	// Image data
 	k4a_image_t color_img, depth_img, point_img;
@@ -175,7 +179,7 @@ private:
 	Vector3d table_rotCenter;
 	double table_position[3];
 	double table_width, table_length, table_height;
-	double table_centerPoint[3], table_topPoint[3], table_botPoint[3];
+	double table_topPoint[3], table_botPoint[3];
 	double table_topMargin, table_botMargin;
 
 	int table_position_pixel_x, table_position_pixel_y;
@@ -185,7 +189,7 @@ private:
 	double tf_vcam_position[3];
 	double tf_world_origin[3], tf_world_normal[3];
 	double tf_world_axisX[3], tf_world_axisY[3], tf_world_axisZ[3];
-	double tf_table_centerPoint[3], tf_table_topPoint[3], tf_table_botPoint[3];
+	double tf_table_topPoint[3], tf_table_botPoint[3];
 	double tf_table_rotCenter[3];
 	double tf_table_position[3];
 
@@ -204,9 +208,7 @@ private:
 	int spike_chk;
 	vector<double> spike_vec;
 	int frameNo_prev;
-
-	double mean, mean_prev, first_element;
-
+	double mean;
 	cv::Mat match_xor_color;
 
 

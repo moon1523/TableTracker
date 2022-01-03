@@ -3,7 +3,7 @@
 TableTracker::TableTracker(string _config_file, int _image_width, int _image_height)
 : image_width(_image_width), image_height(_image_height),
   isMove(false), isRot(false), isSpike(false), isFix(false), isFirst(true), ocr(0,0,0), frameNo(0), spike_chk(0),
-  isColorView(false), isMaskView(false)
+  isColorView(false), isMaskView(false), isPCDFile(false)
 {
 	ReadConfigData(_config_file);
 	ConfigVirtualCamera();
@@ -14,7 +14,10 @@ TableTracker::TableTracker(string _config_file, int _image_width, int _image_hei
 	ofs << setw(10) << "Time(sec)" << setw(10) << "Raw_angle(deg)" << setw(10) << "Filtered_angle(deg)" << endl;
 }
 
-TableTracker::~TableTracker() { ofs.close(); }
+TableTracker::~TableTracker()
+{
+	ofs.close();
+}
 
 cv::Mat TableTracker::GenerateTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t depth_image)
 {
@@ -23,6 +26,9 @@ cv::Mat TableTracker::GenerateTablePointCloud(const k4a_image_t point_cloud_imag
 
 	cv::Mat point_cloud_2d = cv::Mat::zeros(mask_height, mask_width, CV_8UC1);
 	uint8_t* point_cloud_2d_data = (uint8_t*)point_cloud_2d.data;
+
+	vector<RowVector3d> xyz, tf_xyz;
+	vector<RowVector3i> rgb;
 
 	float tf_point[3];
 	for (int i=0; i<image_width*image_height; i++)
@@ -34,6 +40,13 @@ cv::Mat TableTracker::GenerateTablePointCloud(const k4a_image_t point_cloud_imag
 
 		float point[3] = {X,Y,Z};
 		transform->TransformPoint(point, tf_point);
+
+		if (isPCDFile)
+		{
+			xyz.push_back(RowVector3d(point[0],point[1],point[2]));
+			tf_xyz.push_back(RowVector3d(tf_point[0],tf_point[1],tf_point[2]));
+		}
+
 		float topPlane = tf_world_normal[0] * (tf_point[0] - tf_table_topPoint[0]) +
 						 tf_world_normal[1] * (tf_point[1] - tf_table_topPoint[1]) +
 						 tf_world_normal[2] * (tf_point[2] - tf_table_topPoint[2]);
@@ -51,9 +64,10 @@ cv::Mat TableTracker::GenerateTablePointCloud(const k4a_image_t point_cloud_imag
 		if (pixel_y > mask_height) continue;
 		if (pixel_y < 0) continue;
 
-//		 point_cloud_2d_data[ mask_width*pixel_y + pixel_x ] = 255 * (pixel_y / (double)mask_height);
 		point_cloud_2d_data[ mask_width*pixel_y + pixel_x ] = 255;
 	}
+
+	if (isPCDFile) WritePointCloud(xyz, tf_xyz, rgb);
 
 	return point_cloud_2d;
 }
@@ -99,7 +113,7 @@ void TableTracker::ProcessCurrentFrame()
 	}
 
 	// Jittering Correction: Moving Average
-
+	//
 	match_angleList.push_back(get<0>(match_results_raw));
 	if (match_angleList.size() == 30)
 	{
@@ -108,68 +122,25 @@ void TableTracker::ProcessCurrentFrame()
 			match_angleList.push_back(get<0>(match_results));
 		}
 
-//		if(isFirst) {
-			mean = accumulate(match_angleList.begin(), match_angleList.end(), 0LL) / (double)match_angleList.size();
-//			isFirst = false;
-//		}
-
-//		mean = mean_prev + (*match_angleList.rbegin() - first_element )/(match_angleList.size());
-
+		mean = accumulate(match_angleList.begin(), match_angleList.end(), 0LL) / (double)match_angleList.size();
 
 		get<0>(match_results_filtered) = mean;
 		cv::Mat match_xor, rotM, mask_rot;
 		rotM = cv::getRotationMatrix2D(cv::Point(table_rotCenter_pixel_x, table_rotCenter_pixel_y), mean, 1.0);
 		cv::warpAffine(mask, mask_rot, rotM, mask_rot.size());
 		cv::bitwise_xor(mask_rot, binPCD, match_xor);
-//		cv::bitwise_xor(mask_vec[(angle-mask_minRotDeg)/mask_deg], binPCD, match_xor);
 		get<2>(match_results_filtered) = match_xor;
 
-		if (fabs(mean-get<0>(match_results_raw)) > 3.) { // Table is rotated
+		if (fabs(mean-get<0>(match_results_raw)) > 3.) {
 			isRot = true;
 		}
 		else {
 			if(!isMove) isFix = true;
 		}
-
-		first_element = *match_angleList.begin();
-
 		match_angleList.pop_front();
 	}
-
-
-
-
-
-//	// Spikes Detection: Threshold
-//	//
-//	if ((fabs(get<0>(match_results_prev) - get<0>(match_results_raw)) > 5.) ) {
-//		cout << "[Warning] Spike is detected (frame " << frameNo << ") : " << get<0>(match_results_raw) << " -> " << get<0>(match_results_prev) << endl;
-//		if (frameNo - frameNo_prev == 1) {
-//			spike_vec.push_back(get<0>(match_results_raw));
-//		}
-//		frameNo_prev = frameNo;
-//		get<0>(match_results) = get<0>(match_results_prev);
-//		get<1>(match_results) = get<1>(match_results_prev);
-//		cv::Mat match_xor;
-//		cv::bitwise_xor(mask_vec[(get<0>(match_results) - mask_minRotDeg)/mask_deg], binPCD, match_xor);
-//		get<2>(match_results) = match_xor;
-//		isSpike = true;
-//
-//		if (spike_vec.size() == 10) {
-//			spike_vec.clear();
-//			cout << "[ Alert ] Spikes persists. Reset data" << endl;
-//			get<0>(match_results) = get<0>(match_results_raw);
-//			get<1>(match_results) = get<1>(match_results_raw);
-//			isSpike = false;
-//		}
-//
-//	}
-
 	match_results_prev = match_results;
 	match_results_raw_prev = match_results_raw;
-	mean_prev = mean;
-
-
 }
 
 
@@ -207,19 +178,8 @@ void TableTracker::Render(double time)
 	cv::Mat match_color;
 	cv::cvtColor(match_mat, match_color, cv::COLOR_GRAY2BGR);
 
-//	double r =  sqrt( (mask_minX - table_rotCenter_pixel_x) * (mask_minX - table_rotCenter_pixel_x)
-//			        + (mask_minY - table_rotCenter_pixel_y) * (mask_minY - table_rotCenter_pixel_y) );
-
-//	double table_positionX = r * cos((angle-90)*M_PI/180) + table_rotCenter_pixel_x;
-//	double table_positionY = r * sin((angle-90)*M_PI/180) + table_rotCenter_pixel_y;
-
-//	double table_positionX = (mask_minX - table_rotCenter_pixel_x) * cos(-angle*M_PI/180) - (mask_minY - table_rotCenter_pixel_y) * sin(-angle*M_PI/180) + table_rotCenter_pixel_x;
-//	double table_positionY = (mask_minX - table_rotCenter_pixel_x) * sin(-angle*M_PI/180) - (mask_minY - table_rotCenter_pixel_y) * cos(-angle*M_PI/180) + table_rotCenter_pixel_y;
-//	cv::circle(match_color, cv::Point((int)table_positionX,(int)table_positionY), 2.0,cv::Scalar(0,255,255), 3, 8, 0);
-
 //	cv::circle(match_color, cv::Point(mask_minX,mask_minY), 2.0,cv::Scalar(0,255,255), 3, 8, 0);
 	cv::circle(match_color, cv::Point(table_rotCenter_pixel_x,table_rotCenter_pixel_y), 2.0,cv::Scalar(0,255,255), 3, 8, 0);
-//	cv::imshow("bin", match_mat);
 	cv::imshow("TableTracker", match_color);
 
 	if(isColorView) cv::imshow("TableTracker_color", match_xor_color);
@@ -237,6 +197,7 @@ void TableTracker::Render(double time)
 	isRot = false;
 	isFix = false;
 	isSpike = false;
+	isPCDFile = false;
 	frameNo++;
 }
 
@@ -288,7 +249,7 @@ void TableTracker::ReadConfigData(string configData)
 	fs["World_Quaternion(x,y,z,w)"] >> qMat;
 	fs["World_Translation(cm)"] >> tMat;
 	fs["VirtualCamera_Position(cm)"] >> vMat;
-	fs["Table_Position(mm)"] >> pMat;
+	fs["Table_Position(cm)"] >> pMat;
 	fs["Table_RotationCenter(cm)"] >> rMat;
 	fs["Table_Width(cm)"] >> table_width;
 	fs["Table_Length(cm)"] >> table_length;
@@ -314,7 +275,10 @@ void TableTracker::ReadConfigData(string configData)
 	vcam_position = world_trans + world_quat.matrix()*Vector3d(vtMat(0,0)*10, vtMat(0,1)*10, vtMat(0,2)*10);
 
 	cv::cv2eigen(pMat, ptMat);
-	table_position[0] = ptMat(0); table_position[1] = ptMat(1); table_position[2] = ptMat(2);
+	Vector3d table_pos = world_trans + world_quat.matrix()*Vector3d(ptMat(0,0)*10, ptMat(0,1)*10, ptMat(0,2)*10);
+	table_position[0] = table_pos(0) + 2030 * (world_quat.matrix() * Vector3d::UnitY())(0) + 60;
+	table_position[1] = table_pos(1) + 2030 * (world_quat.matrix() * Vector3d::UnitY())(1);
+	table_position[2] = table_pos(2) + 2030 * (world_quat.matrix() * Vector3d::UnitY())(2);
 
 	cv::cv2eigen(rMat, rtMat);
 	table_rotCenter = world_trans + world_quat.matrix()*Vector3d(rtMat(0)*10, rtMat(1)*10, rtMat(2)*10);
@@ -328,7 +292,6 @@ void TableTracker::ConfigVirtualCamera()
 	transform = vtkSmartPointer<vtkTransform>::New();
 	transform->Identity();
 	transform->Translate(-vcam_position(0), -vcam_position(1), -vcam_position(2));
-	cout << *transform->GetMatrix() << endl;
 
 	double theta;
 	double axis_z[3], axis_x[3];
@@ -378,14 +341,22 @@ void TableTracker::ConfigVirtualCamera()
 							 m->GetElement(2, 0), m->GetElement(2, 1), m->GetElement(2, 2), -vcam_position(2)-tf_vcam_position[2],
 							 0, 0, 0, 1};
 
-	transform->SetMatrix(mat);
-
+	transform->SetMatrix(mat); // Kinect Camera View -> Virtual Camera View
 
 	transform->TransformPoint(world_origin, tf_world_origin);
 	transform->TransformVector(world_normal, tf_world_normal);
 	transform->TransformVector(world_axisX, tf_world_axisX);
 	transform->TransformVector(world_axisY, tf_world_axisY);
 	transform->TransformVector(world_axisZ, tf_world_axisZ);
+
+//	double check[3] = { -420.779,-702.693,5143.028 };
+//	double tf_check[3];
+//	transform->Inverse();
+//	transform->TransformPoint(check, tf_check);
+//	cout << tf_check[0] << " " << tf_check[1] << " " << tf_check[2] << endl;
+//	exit(1);
+
+
 
 }
 
@@ -396,13 +367,11 @@ void TableTracker::ConfigTableData()
 
 		table_topPoint[i] = world_origin[i] + world_normal[i] * (table_height + table_topMargin);
 		table_botPoint[i] = world_origin[i] + world_normal[i] * (table_height - table_botMargin);
-//		table_centerPoint[i] = world_origin[i] + world_normal[i] * table_height;
 		table_RotCenter[i] = table_rotCenter(i);
 	}
 
 	transform->TransformPoint(table_topPoint, tf_table_topPoint);
 	transform->TransformPoint(table_botPoint, tf_table_botPoint);
-//	transform->TransformPoint(table_centerPoint, tf_table_centerPoint);
 	transform->TransformPoint(table_RotCenter, tf_table_rotCenter);
 	transform->TransformPoint(table_position, tf_table_position);
 
@@ -464,15 +433,18 @@ void TableTracker::GenerateRectangleTableMask()
 	if (mask_maxY > mask_height) mask_maxY = mask_height;
 
 	mask = cv::Mat::zeros(mask_height, mask_width, CV_8UC1);
-	mask_color = cv::Mat::zeros(mask_height, mask_width, CV_8UC3);
+	if(isColorView) mask_color = cv::Mat::zeros(mask_height, mask_width, CV_8UC3);
 	for (int y = mask_minY; y < mask_maxY; y++) {
 		for (int x = mask_minX; x < mask_maxX; x++) {
-//			mask_data[ y * mask_width + x ] = 255 * ((y-mask_minY)/(double)table_pixelLength) * ((y-mask_minY)/(double)table_pixelLength);
-			mask_data[ y * mask_width + x ] = 255;
 
-			mask_color_data[ (y * mask_width + x) * 3 + 0 ] = 255;
-			mask_color_data[ (y * mask_width + x) * 3 + 1 ] = 255;
-			mask_color_data[ (y * mask_width + x) * 3 + 2 ] = 255;
+			mask_data[ y * mask_width + x ] = 255 * ((y-mask_minY)/(double)table_pixelLength) * ((y-mask_minY)/(double)table_pixelLength);
+
+			if(isColorView) {
+				mask_color_data[ (y * mask_width + x) * 3 + 0 ] = 255;
+				mask_color_data[ (y * mask_width + x) * 3 + 1 ] = 255;
+				mask_color_data[ (y * mask_width + x) * 3 + 2 ] = 255;
+			}
+
 		}
 	}
 
@@ -487,8 +459,6 @@ void TableTracker::GenerateRectangleTableMask()
 		mask_vec.push_back(mask_rot);
 		mask_color_vec.push_back(mask_color_rot);
 	}
-
-	// Mask View
 
 	if (isMaskView) {
 		cout << " Press 'c' to skip the present frame " << endl;
@@ -538,20 +508,18 @@ void TableTracker::PrintConfigData()
 	cout << "        - tf_position (mm): " << tf_vcam_position[0] << " " << tf_vcam_position[1] << " " << tf_vcam_position[2] << endl;
 	cout << endl;
 	cout << "     4) Table Data (Unit: mm)" << endl;
+	cout << "        - position (mm)        : " << table_position[0] << " " << table_position[1] << " " << table_position[2] << endl;
 	cout << "        - width, length, height: " << table_width << ", " << table_length << ", " << table_height << endl;
 	cout << "        - rotation center      : " << table_rotCenter.transpose() << endl;
 	cout << "        - tf_rotation center   : " << tf_table_rotCenter[0] << " " << tf_table_rotCenter[1] << " " << tf_table_rotCenter[2] << endl;
-	cout << "        - layer_center         : " << table_centerPoint[0] << " " << table_centerPoint[1] << " " << table_centerPoint[2] << endl;
 	cout << "        - layer_top            : " << table_topPoint[0] << " " << table_topPoint[1] << " " << table_topPoint[2] << endl;
 	cout << "        - layer_bot            : " << table_botPoint[0] << " " << table_botPoint[1] << " " << table_botPoint[2] << endl;
-	cout << "        - tf_layer_center      : " << tf_table_centerPoint[0] << " " << tf_table_centerPoint[1] << " " << tf_table_centerPoint[2] << endl;
 	cout << "        - tf_layer_top:        : " << tf_table_topPoint[0] << " " << tf_table_topPoint[1] << " " << tf_table_topPoint[2] << endl;
 	cout << "        - tf_layer_bot:        : " << tf_table_botPoint[0] << " " << tf_table_botPoint[1] << " " << tf_table_botPoint[2] << endl;
 	cout << endl;
 }
 
 // Auxiliary Functions
-//
 //
 
 cv::Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t color_image)
@@ -562,7 +530,7 @@ cv::Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud
 	cv::Mat point_cloud_2d = cv::Mat::zeros(mask_height, mask_width, CV_8UC3);
 	uint8_t* point_cloud_2d_data = (uint8_t*)point_cloud_2d.data;
 
-	vector<RowVector3d> xyz;
+	vector<RowVector3d> xyz, tf_xyz;
 	vector<RowVector3i> rgb;
 
 	float tf_point[3];
@@ -582,8 +550,13 @@ cv::Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud
 		float point[3] = {X,Y,Z};
 		transform->TransformPoint(point, tf_point);
 
-//		xyz.push_back(RowVector3d(tf_point[0],tf_point[1],tf_point[2]));
-//		rgb.push_back(RowVector3i(r,g,b));
+		if (isPCDFile)
+		{
+			xyz.push_back(RowVector3d(point[0],point[1],point[2]));
+			tf_xyz.push_back(RowVector3d(tf_point[0],tf_point[1],tf_point[2]));
+			rgb.push_back(RowVector3i(r,g,b));
+		}
+
 
 		float topPlane = tf_world_normal[0] * (tf_point[0] - tf_table_topPoint[0]) +
 				         tf_world_normal[1] * (tf_point[1] - tf_table_topPoint[1]) +
@@ -606,28 +579,59 @@ cv::Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud
 		point_cloud_2d_data[ 3*(mask_width*pixel_y + pixel_x) + 1] = g;
 		point_cloud_2d_data[ 3*(mask_width*pixel_y + pixel_x) + 2] = r;
 	}
-//	WritePointCloud(xyz, rgb);
-//	exit(1);
+
+	if (isPCDFile) WritePointCloud(xyz, tf_xyz, rgb);
 
 	return point_cloud_2d;
 }
 
-void TableTracker::WritePointCloud(vector<RowVector3d> xyz, vector<RowVector3i> rgb)
+void TableTracker::WritePointCloud(vector<RowVector3d> xyz, vector<RowVector3d> tf_xyz, vector<RowVector3i> rgb)
 {
-    std::ofstream ofs("tf_pcd_vcam2.ply"); // text mode first
-    ofs << "ply" << std::endl;
-    ofs << "format ascii 1.0" << std::endl;
-    ofs << "element vertex "  << xyz.size() << std::endl;
-    ofs << "property float x" << std::endl;
-    ofs << "property float y" << std::endl;
-    ofs << "property float z" << std::endl;
-    ofs << "property uchar red" << std::endl;
-    ofs << "property uchar green" << std::endl;
-    ofs << "property uchar blue" << std::endl;
-    ofs << "end_header" << std::endl;
-
-    for (size_t i=0;i<xyz.size();i++) {
-    	ofs << xyz[i] << " " << rgb[i] << endl;
+    ofstream ofs( to_string(frameNo) + ".ply");
+    ofs << "ply" << endl;
+    ofs << "format ascii 1.0" << endl;
+    ofs << "element vertex "  << xyz.size() << endl;
+    ofs << "property float x" << endl;
+    ofs << "property float y" << endl;
+    ofs << "property float z" << endl;
+    if (isColorView) {
+    	ofs << "property uchar red" << endl;
+		ofs << "property uchar green" << endl;
+		ofs << "property uchar blue" << endl;
+		ofs << "end_header" << endl;
+		for (size_t i=0;i<xyz.size();i++) {
+			ofs << xyz[i] << " " << rgb[i] << endl;
+		}
     }
+    else {
+    	ofs << "end_header" << endl;
+    	for (size_t i=0;i<xyz.size();i++) {
+			ofs << xyz[i] << endl;
+		}
+    } ofs.close();
 
+    ofstream ofs_tf( to_string(frameNo) + "_tf.ply");
+	ofs_tf << "ply" << endl;
+	ofs_tf << "format ascii 1.0" << endl;
+	ofs_tf << "element vertex "  << tf_xyz.size() << endl;
+	ofs_tf << "property float x" << endl;
+	ofs_tf << "property float y" << endl;
+	ofs_tf << "property float z" << endl;
+	if (isColorView) {
+		ofs_tf << "property uchar red" << endl;
+		ofs_tf << "property uchar green" << endl;
+		ofs_tf << "property uchar blue" << endl;
+		ofs_tf << "end_header" << endl;
+
+		for (size_t i=0;i<tf_xyz.size();i++) {
+			ofs_tf << tf_xyz[i] << " " << rgb[i] << endl;
+		}
+	}
+	else {
+		ofs_tf << "end_header" << endl;
+		for (size_t i=0;i<tf_xyz.size();i++) {
+			ofs_tf << tf_xyz[i] << endl;
+		}
+	}
+	ofs_tf.close();
 }

@@ -56,7 +56,6 @@ int RECORD_TRACKING(char* fileName)
 	k4a_result_t result;
 	k4a_stream_result_t stream_result;
 
-//	fileName = "./record/4_20210930/rotate2/table11.mkv";
 	result = k4a_playback_open(fileName, &playback);
 	if (result != K4A_RESULT_SUCCEEDED || playback == NULL) {
 		printf("Failed to open recording %s\n", fileName); exit(1);
@@ -95,7 +94,7 @@ int RECORD_TRACKING(char* fileName)
 	double time(0);
 	cout << "*** STREAM LOOP START !!" << endl;
 //	tableTracker.ColorView(true);
-	tableTracker.MaskView(true);
+//	tableTracker.MaskView(true);
 	while(true)
 	{
 		Timer timer; timer.start();
@@ -116,7 +115,6 @@ int RECORD_TRACKING(char* fileName)
 		tableTracker.SetNewImage(uncompressed_color_image, depth_image, point_image);
 		tableTracker.ProcessCurrentFrame();
 
-
 		cv::Mat color(image_height, image_width, CV_8UC3, cv::Scalar(0,0,0));
         uchar* color_data = color.data;
         uint8_t *color_image_data = k4a_image_get_buffer(uncompressed_color_image);
@@ -126,16 +124,14 @@ int RECORD_TRACKING(char* fileName)
 			color_data[ 3 * i + 1 ] = color_image_data[ 4 * i + 1 ];
 			color_data[ 3 * i + 2 ] = color_image_data[ 4 * i + 2 ];
         }
+        cv::imshow("color", color);
 
 		timer.stop();
 		tableTracker.Render(timer.time());
-		cv::imshow("color", color);
-
 
 		char key = (char)waitKey(1);
 		if (key == 'g') {
-			cout << "Generate Point Cloud Data" << endl;
-			transformation_helpers_write_point_cloud(point_image, uncompressed_color_image, "pcd.ply");
+			tableTracker.GeneratePointCloudFile();
 		}
 		else if (key == 'o') {
 			tableTracker.DecreaseBotMargin();
@@ -235,9 +231,10 @@ int TABLE_TRACKING(int argc, char** argv)
 		tableTracker.Render(timer.time());
 		cv::imshow("color", color);
 
+		transformation_helpers_write_point_cloud(point_image, color_image, "pcd.ply");
+
 		char key = (char)waitKey(1);
 		if (key == 'g') {
-			cout << "Generate Point Cloud Data" << endl;
 			transformation_helpers_write_point_cloud(point_image, color_image, "pcd.ply");
 		}
 		else if (key == 'o') {
@@ -445,11 +442,6 @@ int RECORD_CHARUCO_SYNC(char* fileName)
 			sync.ClearData();
 		else if (key == 't')
 			sync.TickSwitch();
-		else if (key == 'g')
-		{
-			cout << "Generate Point Cloud Data" << endl;
-			transformation_helpers_write_point_cloud(point_image, uncompressed_color_image, "pcd.ply");
-		}
 
 		k4a_capture_release(capture);
 		k4a_image_release(color_image);
