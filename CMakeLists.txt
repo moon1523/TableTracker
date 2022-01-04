@@ -39,7 +39,7 @@ FILE(GLOB HEADER_FILES ${PROJECT_SOURCE_DIR}/include/*)
 # The main program
 add_executable(${PROJECT_NAME} table_main.cc ${SRC_FILES} ${HEADER_FILES})
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${Python2_INCLUDE_DIRS} ${Python2_NumPy_INCLUDE_DIRS})
+# target_include_directories(${PROJECT_NAME} PRIVATE ${Python2_INCLUDE_DIRS} ${Python2_NumPy_INCLUDE_DIRS})
 
 # Link
 target_link_libraries( ${PROJECT_NAME} 
