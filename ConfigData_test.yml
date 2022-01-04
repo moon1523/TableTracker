@@ -14,7 +14,7 @@ VirtualCamera_Position(cm):
    cols: 3
    dt: d
    data: [25, 10, 60]
-Table_Position_by_ChArUco2(cm):
+Table_Reference_by_ChArUco2(cm):
    rows: 1
    cols: 3
    dt: d
