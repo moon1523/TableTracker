@@ -275,7 +275,7 @@ void TableTracker::ReadConfigData(string configData)
 	fs["World_Quaternion(x,y,z,w)"] >> qMat;
 	fs["World_Translation(cm)"] >> tMat;
 	fs["VirtualCamera_Position(cm)"] >> vMat;
-	fs["Table_Position_by_ChArUco2(cm)"] >> pMat;
+	fs["Table_Reference_by_ChArUco2(cm)"] >> pMat;
 	fs["Table_RotationCenter_by_ChArUco2(cm)"] >> rMat;
 	fs["Table_Reference_to_Position(cm)"] >> table_reference_to_position;
 	fs["Table_ChArUco_Calibration_x(cm)"] >> table_charuco_calibration_x;
@@ -316,9 +316,9 @@ void TableTracker::ReadConfigData(string configData)
 			world_quat.matrix()*
 			Vector3d(ptMat(0,0)*10+table_charuco_calibration_x, ptMat(0,1)*10+table_charuco_calibration_y, ptMat(0,2)*10);
 
-	table_position[0] = table_pos(0) + table_reference_to_position * (world_quat.matrix() * Vector3d::UnitY())(0) + table_calibration_x;
-	table_position[1] = table_pos(1) + table_reference_to_position * (world_quat.matrix() * Vector3d::UnitY())(1) + table_calibration_y;
-	table_position[2] = table_pos(2) + table_reference_to_position * (world_quat.matrix() * Vector3d::UnitY())(2);
+	table_position[0] = table_pos(0) + table_calibration_x * (world_quat.matrix() * Vector3d::UnitX())(0) + (table_reference_to_position + table_calibration_y) * (world_quat.matrix() * Vector3d::UnitY())(0);
+	table_position[1] = table_pos(1) + table_calibration_x * (world_quat.matrix() * Vector3d::UnitX())(1) + (table_reference_to_position + table_calibration_y) * (world_quat.matrix() * Vector3d::UnitY())(1);
+	table_position[2] = table_pos(2) + table_calibration_x * (world_quat.matrix() * Vector3d::UnitX())(2) + (table_reference_to_position + table_calibration_y) * (world_quat.matrix() * Vector3d::UnitY())(2);
 
 	cv::cv2eigen(rMat, rtMat);
 	table_rotCenter = world_trans +

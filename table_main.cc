@@ -59,7 +59,7 @@ int main(int argc, char** argv)
 
 int TABLE_TRACKING(int argc, char** argv)
 {
-	string configName = "ConfigData_test2.yml";
+	string configName = "ConfigData_test.yml";
 	string outputName = "results.out";
 	bool isColor = false;
 	bool isMask = false;
@@ -184,7 +184,7 @@ int TABLE_TRACKING(int argc, char** argv)
 int RECORD_TRACKING(int argc, char** argv)
 {
 	char* recordName;
-	string configName = "ConfigData2.yml";
+	string configName = "ConfigData.yml";
 	string outputName = "results.out";
 	bool isColor = false;
 	bool isMask = false;
