@@ -40,14 +40,16 @@ struct color_point_t
 k4a_device_configuration_t get_default_config();
 cv::Mat color_to_opencv(const k4a_image_t im);
 cv::Mat depth_to_opencv(const k4a_image_t im);
-k4a_image_t color_to_depth(k4a_transformation_t transformation_handle,
-							   const k4a_image_t depth_image,
-							   const k4a_image_t color_image);
-k4a_image_t create_depth_image_like(const k4a_image_t im);
-k4a_image_t create_color_image_like(const k4a_image_t im);
-k4a_image_t create_point_cloud_based_color(const k4a_image_t im);
-k4a_image_t create_point_cloud_based_depth(const k4a_image_t im);
 k4a_image_t Convert_Color_MJPG_To_BGRA(k4a_image_t color_image);
+
+//k4a_image_t color_to_depth(k4a_transformation_t transformation_handle,
+//							   const k4a_image_t depth_image,
+//							   const k4a_image_t color_image);
+//k4a_image_t create_depth_image_like(const k4a_image_t im);
+//k4a_image_t create_color_image_like(const k4a_image_t im);
+//k4a_image_t create_point_cloud_based_color(const k4a_image_t im);
+//k4a_image_t create_point_cloud_based_depth(const k4a_image_t im);
+
 
 class Timer
 {

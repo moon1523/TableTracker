@@ -98,8 +98,8 @@ int TABLE_TRACKING(int argc, char** argv)
 	k4a_image_t depth_image = NULL;
 	k4a_image_t point_image = NULL;
 	k4a_image_t colorlike_depth_image = NULL;
-	k4a_transformation_t k4aTransform = NULL;
-	k4aTransform = k4a_transformation_create(&sensorCalibration);
+	k4a_transformation_t transformation = NULL;
+	transformation = k4a_transformation_create(&sensorCalibration);
 
 	int image_width  = sensorCalibration.color_camera_calibration.resolution_width;
 	int image_height = sensorCalibration.color_camera_calibration.resolution_height;
@@ -114,22 +114,32 @@ int TABLE_TRACKING(int argc, char** argv)
 	{
 		Timer timer; timer.start();
 
-		// Capture image
+		// 1. Capture image
 		k4a_device_get_capture(device, &sensorCapture, 1000);
-		color_image = k4a_capture_get_color_image(sensorCapture);
 		depth_image = k4a_capture_get_depth_image(sensorCapture);
-		point_image = create_point_cloud_based_color(color_image);
-		colorlike_depth_image = create_depth_image_like(color_image);
-		k4a_transformation_depth_image_to_color_camera(k4aTransform, depth_image, colorlike_depth_image);
-		k4a_transformation_depth_image_to_point_cloud(k4aTransform, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
+		k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM, image_width, image_height, image_width * 3 * (int)sizeof(uint16_t), &point_image);
+		k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16, image_width, image_height, image_width * (int)sizeof(uint16_t), &colorlike_depth_image);
+		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
+		k4a_transformation_depth_image_to_point_cloud(transformation, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
 
-		// Read OCR data
+		// 2. Read OCR data
 
+		// 3. Set OCR data
 		tableTracker.SetOCR(ocr);
-		if(isColor) tableTracker.SetNewImage(color_image, depth_image, point_image);
-		else 		tableTracker.SetNewImage(depth_image, point_image);
+
+		// 4. Set Image
+		if(isColor) {
+			color_image = k4a_capture_get_color_image(sensorCapture);
+			tableTracker.SetNewImage(color_image, depth_image, point_image);
+		}
+		else
+			tableTracker.SetNewImage(depth_image, point_image);
+
+		// 5. Process
 		tableTracker.ProcessCurrentFrame();
 		timer.stop();
+
+		// 6. Render
 		tableTracker.Render(timer.time());
 
 		char key = (char)waitKey(1);
@@ -156,15 +166,16 @@ int TABLE_TRACKING(int argc, char** argv)
 			break;
 		}
 
+		// 7. Release
 		k4a_capture_release(sensorCapture);
-		k4a_image_release(color_image);
 		k4a_image_release(depth_image);
 		k4a_image_release(colorlike_depth_image);
 		k4a_image_release(point_image);
 
+		if(isColor) k4a_image_release(color_image);
 	}
 
-	k4a_transformation_destroy(k4aTransform);
+	k4a_transformation_destroy(transformation);
 	k4a_device_close(device);
 
 	return EXIT_SUCCESS;
@@ -255,25 +266,37 @@ int RECORD_TRACKING(int argc, char** argv)
 	while(true)
 	{
 		Timer timer; timer.start();
+
+		// 1. Capture
 		stream_result = k4a_playback_get_next_capture(playback, &capture);
 		if (stream_result == K4A_STREAM_RESULT_EOF) {
 			cout << "Last capture" << endl; break;
 		}
 		depth_image = k4a_capture_get_depth_image(capture);
-		color_image = k4a_capture_get_color_image(capture);
-		uncompressed_color_image = Convert_Color_MJPG_To_BGRA(color_image);
-		point_image = create_point_cloud_based_color(uncompressed_color_image);
-		colorlike_depth_image = create_depth_image_like(uncompressed_color_image);
+		k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM, image_width, image_height, image_width * 3 * (int)sizeof(uint16_t), &point_image);
+		k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16, image_width, image_height, image_width * (int)sizeof(uint16_t), &colorlike_depth_image);
 		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
 		k4a_transformation_depth_image_to_point_cloud(transformation, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
 
-		// Read OCR data
+		// 2. Read OCR data
 
+		// 3. Set OCR data
 		tableTracker.SetOCR(ocr);
-		if(isColor) tableTracker.SetNewImage(color_image, depth_image, point_image);
-		else 		tableTracker.SetNewImage(depth_image, point_image);
+
+		// 4. Set Image
+		if(isColor) {
+			color_image = k4a_capture_get_color_image(capture);
+			uncompressed_color_image = Convert_Color_MJPG_To_BGRA(color_image);
+			tableTracker.SetNewImage(uncompressed_color_image, depth_image, point_image);
+		}
+		else
+			tableTracker.SetNewImage(depth_image, point_image);
+
+		// 5. Process
 		tableTracker.ProcessCurrentFrame();
 		timer.stop();
+
+		// 6. Render
 		tableTracker.Render(timer.time());
 
 		char key = (char)waitKey(1);
@@ -300,12 +323,17 @@ int RECORD_TRACKING(int argc, char** argv)
 			break;
 		}
 
+		// 7. Release
 		k4a_capture_release(capture);
-		k4a_image_release(color_image);
 		k4a_image_release(depth_image);
-		k4a_image_release(uncompressed_color_image);
-		k4a_image_release(point_image);
 		k4a_image_release(colorlike_depth_image);
+		k4a_image_release(point_image);
+
+		if (isColor) {
+			k4a_image_release(color_image);
+			k4a_image_release(uncompressed_color_image);
+		}
+
 	}
 	k4a_transformation_destroy(transformation);
 	k4a_playback_close(playback);
@@ -356,7 +384,7 @@ int CHARUCO_SYNC(int argc, char** argv)
 	cout << "   Depth resolution: " << sensorCalibration.depth_camera_calibration.resolution_width << " x "
 								    << sensorCalibration.depth_camera_calibration.resolution_height << endl << endl;
 
-
+	k4a_capture_t sensorCapture = NULL;
 	// Synchronization
 	CharucoSync sync((int)PatientTable::TestDevice);
 	sync.SetParameters(camParm, detParm);
@@ -365,7 +393,8 @@ int CHARUCO_SYNC(int argc, char** argv)
 	waitKey(1000);
 	while(true)
 	{
-		k4a_capture_t sensorCapture = nullptr;
+
+		// 1. Capture
 		k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
 
 		if (getCaptureResult == K4A_WAIT_RESULT_FAILED)
@@ -376,15 +405,16 @@ int CHARUCO_SYNC(int argc, char** argv)
 		else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
 			continue;
 
-		Mat color;
 		Vec3d rvec, tvec;
 		k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
-		color = color_to_opencv(color_img);
-		k4a_image_release(color_img);
-		k4a_capture_release(sensorCapture);
+		Mat color = color_to_opencv(color_img);
+
+		// 2. Estimate Pose
 		sync.EstimatePose(color, rvec, tvec);
 
+		// 3. Render
 		sync.Render();
+
 		char key = waitKey(1);
 		if (key == 'q')
 			break;
@@ -398,6 +428,10 @@ int CHARUCO_SYNC(int argc, char** argv)
 			sync.ClearData();
 		else if (key == 't')
 			sync.TickSwitch();
+
+		// 4. Release
+		k4a_image_release(color_img);
+		k4a_capture_release(sensorCapture);
 	}
 	k4a_device_close(device);
 
@@ -434,9 +468,6 @@ int RECORD_CHARUCO_SYNC(int argc, char** argv)
 	k4a_capture_t capture = NULL;
 	k4a_image_t color_image = NULL;
 	k4a_image_t uncompressed_color_image = NULL;
-	k4a_image_t depth_image = NULL;
-	k4a_image_t point_image = NULL;
-	k4a_image_t colorlike_depth_image = NULL;
 
 	k4a_result_t result;
 	k4a_stream_result_t stream_result;
@@ -462,8 +493,6 @@ int RECORD_CHARUCO_SYNC(int argc, char** argv)
 	transformation = k4a_transformation_create(&sensorCalibration);
 	cout << "   Color resolution: " << sensorCalibration.color_camera_calibration.resolution_width << " x "
 								    << sensorCalibration.color_camera_calibration.resolution_height << endl;
-	cout << "   Depth resolution: " << sensorCalibration.depth_camera_calibration.resolution_width << " x "
-								    << sensorCalibration.depth_camera_calibration.resolution_height << endl << endl;
 
 	// Configuration
 	string detParm("detector_params.yml");
@@ -478,25 +507,23 @@ int RECORD_CHARUCO_SYNC(int argc, char** argv)
 
 	while(true)
 	{
+		// 1. Capture
 		stream_result = k4a_playback_get_next_capture(playback, &capture);
 		if (stream_result == K4A_STREAM_RESULT_EOF) {
 			cout << "   Last capture" << endl; break;
 		}
 		color_image = k4a_capture_get_color_image(capture);
 		uncompressed_color_image = Convert_Color_MJPG_To_BGRA(color_image);
-		depth_image = k4a_capture_get_depth_image(capture);
-		point_image = create_point_cloud_based_color(uncompressed_color_image);
-		colorlike_depth_image = create_depth_image_like(uncompressed_color_image);
-		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
-		k4a_transformation_depth_image_to_point_cloud(transformation, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
 
-		Mat color;
 		Vec3d rvec, tvec;
-		color = color_to_opencv(uncompressed_color_image);
+		Mat color = color_to_opencv(uncompressed_color_image);
 
+		// 2. Esimate pose
 		sync.EstimatePose(color, rvec, tvec);
 
+		// 3. Render
 		sync.Render();
+
 		char key = waitKey(1);
 		if (key == 'q')
 			break;
@@ -511,12 +538,10 @@ int RECORD_CHARUCO_SYNC(int argc, char** argv)
 		else if (key == 't')
 			sync.TickSwitch();
 
+		// 4. Release
 		k4a_capture_release(capture);
 		k4a_image_release(color_image);
 		k4a_image_release(uncompressed_color_image);
-		k4a_image_release(depth_image);
-		k4a_image_release(point_image);
-		k4a_image_release(colorlike_depth_image);
 	}
 	k4a_playback_close(playback);
 	sync.WriteTransformationData(outputName);

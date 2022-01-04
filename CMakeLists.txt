@@ -15,7 +15,7 @@ FIND_PACKAGE(k4a REQUIRED)
 FIND_PACKAGE(k4abt REQUIRED)
 FIND_PACKAGE(k4arecord REQUIRED)
 FIND_PACKAGE(Eigen3 REQUIRED)
-find_package(Python2 COMPONENTS Development NumPy)
+#find_package(Python2 COMPONENTS Development NumPy)
 add_subdirectory(libjpeg-turbo)
 
 # Include directories
@@ -26,7 +26,7 @@ include_directories(~/data/Azure-Kinect-Samples/body-tracking-samples/sample_hel
 link_directories(${OpenCV_LIBRARY_DIRS})
 add_definitions(${OpenCV_DEFINITIONS})
 include(${VTK_USE_FILE})
-include_directories(/home/hurel/data/matplotlib-cpp)
+#include_directories(/home/hurel/data/matplotlib-cpp)
 
 
 
@@ -49,6 +49,7 @@ target_link_libraries( ${PROJECT_NAME}
 	k4a::k4arecord
        	Eigen3::Eigen
 	libjpeg-turbo::libjpeg-turbo
-	Python2::Python 
-	Python2::NumPy)
+)
+#	Python2::Python 
+#	Python2::NumPy)
 
