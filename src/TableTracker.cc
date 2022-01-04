@@ -221,7 +221,7 @@ tuple<double, double, cv::Mat> TableTracker::MatchingData()
 
 		// Find the most similar mask
 		if (max_sim < similarity) {
-			// bitwise xor is used to view, not affect the mathcing results
+			// bitwise_xor does not affect the matching result.
 			if(isMaskView) {
 				cv::bitwise_xor(mask_vec[idx], binPCD, match_xor);
 				if(isColorView) {
