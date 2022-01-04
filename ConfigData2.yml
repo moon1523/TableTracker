@@ -14,16 +14,21 @@ VirtualCamera_Position(cm):
    cols: 3
    dt: d
    data: [100, 50, 300]
-Table_Position(cm):
+Table_Position_by_ChArUco2(cm):
    rows: 1
    cols: 3
    dt: d
-   data: [92.995, 79.006, 85.1807]
-Table_RotationCenter(cm):
+   data: [130.995, 32.206, 85.1807]
+Table_RotationCenter_by_ChArUco2(cm):
    rows: 1
    cols: 3
    dt:   d
-   data: [113.424, 43.16411, 88.9577]
+   data: [151.424, -3.63589, 88.9577]
+Table_Reference_to_Position(cm): 203
+Table_ChArUco_Calibration_x(cm): -38
+Table_ChArUco_Calibration_y(cm): 46.8
+Table_Calibration_x(cm): 6
+Table_Calibration_y(cm): 0
 Table_Width(cm): 60
 Table_Length(cm): 320
 Table_Height(cm): 95

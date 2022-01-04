@@ -47,16 +47,32 @@ k4a_image_t create_depth_image_like(const k4a_image_t im);
 k4a_image_t create_color_image_like(const k4a_image_t im);
 k4a_image_t create_point_cloud_based_color(const k4a_image_t im);
 k4a_image_t create_point_cloud_based_depth(const k4a_image_t im);
-cv::Mat create_color_xy_table(const k4a_calibration_t calibration);
-void transformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image,
-                                              const k4a_image_t color_image,
-                                              const char *file_name);
 k4a_image_t Convert_Color_MJPG_To_BGRA(k4a_image_t color_image);
 
-pair<Quaterniond, Vector3d> ReadCharucoData(string fileName);
-tuple<Point2i, Point2i, Point2i> ReadTableCenterData(string fileName);
+class Timer
+{
+public:
+    Timer() : start_(0), time_(0) {}
 
+    void start() {
+    	start_ = cv::getTickCount();
+    }
+    void stop() {
+        CV_Assert(start_ != 0);
+        int64 end = cv::getTickCount();
+        time_ += end - start_;
+        start_ = 0;
+    }
 
+    double time() {
+        double ret = time_ / cv::getTickFrequency();
+        time_ = 0;
+        return ret;
+    }
+
+private:
+    int64 start_, time_;
+};
 
 
 

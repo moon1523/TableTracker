@@ -16,6 +16,16 @@ using namespace std;
 using namespace cv;
 using namespace Eigen;
 
+enum class PatientTable
+{
+	TestDevice,
+	AlluraXper,
+	ArtisZeego,
+	ArtisQ,
+	Azurion7,
+	InnovaIGS630
+};
+
 class CharucoSync
 {
 public:

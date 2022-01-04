@@ -128,13 +128,6 @@ void CharucoSync::EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec)
                 	Quaterniond quat0 = Quaterniond(avg10_quat.w(), avg10_quat.x(), avg10_quat.y(), avg10_quat.z());
                 	Quaterniond quat1 = Quaterniond(q.w(), q.x(), q.y(), q.z());
 
-//                	Vector3d axisX0 = VectorRotatedByQuaternion(Vector3d(1,0,0), quat0);
-//					Vector3d axisY0 = VectorRotatedByQuaternion(Vector3d(0,1,0), quat0);
-//					Vector3d axisZ0 = VectorRotatedByQuaternion(Vector3d(0,0,1), quat0);
-//					Vector3d axisX1 = VectorRotatedByQuaternion(Vector3d(1,0,0), quat1);
-//                  Vector3d axisY1 = VectorRotatedByQuaternion(Vector3d(0,1,0), quat1);
-//                  Vector3d axisZ1 = VectorRotatedByQuaternion(Vector3d(0,0,1), quat1);
-
                 	Vector3d axisX0 = quat0.matrix() * Vector3d::UnitX();
 					Vector3d axisY0 = quat0.matrix() * Vector3d::UnitY();
 					Vector3d axisZ0 = quat0.matrix() * Vector3d::UnitZ();
@@ -202,6 +195,7 @@ void CharucoSync::ShowAvgValue(const Mat &color)
 }
 
 void CharucoSync::WriteTransformationData(string fileName){
+	cout << fileName << " is generated." << endl;
     ofstream ofs(fileName);
     Vector4d q = quaternionAverage(quaternions);
     Vec3d t = tvec_sum / (double)quaternions.size();
@@ -210,12 +204,11 @@ void CharucoSync::WriteTransformationData(string fileName){
     time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
     ofs<<ctime(&now)<<endl;
     ofs<<endl;
+    ofs.close();
 }
 
 void CharucoSync::SetScalingFactor(float s)
 {
-    if (display.cols > 1920 || display.rows < 1080)
-        s *= 0.7;
     sf = s;
     sfInv = 1 / s;
 }

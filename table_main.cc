@@ -7,18 +7,38 @@
 
 int TABLE_TRACKING(int, char**);
 int CHARUCO_SYNC(int, char**);
-int RECORD_TRACKING(char*);
-int RECORD_CHARUCO_SYNC(char*);
+int RECORD_TRACKING(int, char**);
+int RECORD_CHARUCO_SYNC(int, char**);
 
 void PrintUsage()
 {
     cout << ">> Usage" << endl;
-    cout << "  ./table_tracker -track  [output]" << endl;
-    cout << "  ./table_tracker -sync   [output]" << endl;
-    cout << "  ./table_tracker -rtrack [record.mkv]" << endl;
-    cout << "  ./table_tracker -rsync  [record.mkv]" << endl << endl;
-}
+    cout << "  ./table_tracker -track  -c [config.yml] -o [output] (-v) (-m)" << endl;
+    cout << "  ./table_tracker -rtrack -c [config.yml] -r [record.mkv] -o [output] (-v) (-m)" << endl;
+    cout << "  ./table_tracker -sync   -o [output] -s [s_factor]" << endl;
+    cout << "  ./table_tracker -rsync  -r [record.mkv] -o [output] -s [s_factor]" << endl << endl;
 
+    cout << "  -v: color view" << endl;
+    cout << "  -m: mask view" << endl;
+    cout << "  -s: scaling factor" << endl;
+    cout << "  [config.yml] default = ConfigData.yml" << endl;
+    cout << "  [output]     default = results.out " << endl;
+    cout << "  [s_factor]   default = 0.3" << endl;
+    cout << "  [record.mkv] can be acquired by k4aviewer" << endl << endl;
+
+    cout << ">> Key down" << endl;
+    cout << "   Tracking mode" << endl;
+    cout << "     'g'     : Generate Point Cloud PLY File for the present frame (pcd, tf_pcd)" << endl;
+    cout << "     'o', 'p': Decrease/Increase bot margin" << endl;
+    cout << "     '[', ']': Decrease/Increase top margin" << endl;
+    cout << "     's'     : Set OCR data manually" << endl;
+    cout << "     'q'     : Exit" << endl;
+    cout << "   ChArUco Sync mode" << endl;
+    cout << "     'a'     : Show average data" << endl;
+    cout << "     'c'     : Clear the accumulative data" << endl;
+    cout << "     't'     : Start or Stop the data accumulation" << endl;
+    cout << "     'q'     : Exit" << endl << endl;
+}
 
 int main(int argc, char** argv)
 {
@@ -28,20 +48,158 @@ int main(int argc, char** argv)
 	else if(argc > 1 && string(argv[1])=="-sync")
 		return CHARUCO_SYNC(argc, argv);
 	else if(argc > 1 && string(argv[1])=="-rtrack")
-		return RECORD_TRACKING(argv[2]);
+		return RECORD_TRACKING(argc, argv);
 	else if(argc > 1 && string(argv[1])=="-rsync")
-		return RECORD_CHARUCO_SYNC(argv[2]);
+		return RECORD_CHARUCO_SYNC(argc, argv);
 	else
 		cout << "Check the Argument" << endl;
 
 	return EXIT_SUCCESS;
 }
 
-
-int RECORD_TRACKING(char* fileName)
+int TABLE_TRACKING(int argc, char** argv)
 {
-	cout << "== RECORD TRACKING =======================" << endl << endl;
+	string configName = "ConfigData_test2.yml";
+	string outputName = "results.out";
+	bool isColor = false;
+	bool isMask = false;
+	for (int i=2; i<argc; i++) {
+		if ( string(argv[i]) == "-c") {
+			configName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-o" ) {
+			outputName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-v" ) {
+			isColor = true;
+		}
+		else if ( string(argv[i]) == "-m" ) {
+			isMask = true;
+		}
+	}
+	cout << "== TABLE TRACKING =======================" << endl;
+	// Start camera
+	k4a_device_t device = nullptr;
+	VERIFY(k4a_device_open(K4A_DEVICE_DEFAULT, &device), "Open K4A Device failed!");
 
+	// Start camera. Make sure depth camera is enabled.
+	k4a_device_configuration_t deviceConfig = get_default_config();
+	VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
+
+	// Get calibration information
+	k4a_calibration_t sensorCalibration;
+	VERIFY(k4a_device_get_calibration(device, deviceConfig.depth_mode, deviceConfig.color_resolution, &sensorCalibration),
+		   "Get depth camera calibration failed!");
+
+	k4a_capture_t sensorCapture = NULL;
+	k4a_image_t color_image = NULL;
+	k4a_image_t depth_image = NULL;
+	k4a_image_t point_image = NULL;
+	k4a_image_t colorlike_depth_image = NULL;
+	k4a_transformation_t k4aTransform = NULL;
+	k4aTransform = k4a_transformation_create(&sensorCalibration);
+
+	int image_width  = sensorCalibration.color_camera_calibration.resolution_width;
+	int image_height = sensorCalibration.color_camera_calibration.resolution_height;
+
+	TableTracker tableTracker(configName, outputName, image_width,image_height);
+	Vector3d ocr(0,0,0); // lat, long, height
+
+	tableTracker.ColorView(isColor);
+	tableTracker.MaskView(isMask);
+	cout << "*** STREAM LOOP START !!" << endl;
+	while(true)
+	{
+		Timer timer; timer.start();
+
+		// Capture image
+		k4a_device_get_capture(device, &sensorCapture, 1000);
+		color_image = k4a_capture_get_color_image(sensorCapture);
+		depth_image = k4a_capture_get_depth_image(sensorCapture);
+		point_image = create_point_cloud_based_color(color_image);
+		colorlike_depth_image = create_depth_image_like(color_image);
+		k4a_transformation_depth_image_to_color_camera(k4aTransform, depth_image, colorlike_depth_image);
+		k4a_transformation_depth_image_to_point_cloud(k4aTransform, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
+
+		// Read OCR data
+
+		tableTracker.SetOCR(ocr);
+		if(isColor) tableTracker.SetNewImage(color_image, depth_image, point_image);
+		else 		tableTracker.SetNewImage(depth_image, point_image);
+		tableTracker.ProcessCurrentFrame();
+		timer.stop();
+		tableTracker.Render(timer.time());
+
+		char key = (char)waitKey(1);
+		if (key == 'g') {
+			tableTracker.GeneratePointCloudFile();
+		}
+		else if (key == 'o') {
+			tableTracker.DecreaseBotMargin();
+		}
+		else if (key == 'p') {
+			tableTracker.IncreaseBotMargin();
+		}
+		else if (key == '[') {
+			tableTracker.DecreaseTopMargin();
+		}
+		else if (key == ']') {
+			tableTracker.IncreaseTopMargin();
+		}
+		else if (key == 's') {
+			cout <<"Set the OCR data (lateral, longitudinal, height, unit: mm) " << endl;
+			cin >> ocr(0) >> ocr(1) >> ocr(2);
+		}
+		else if (key == 'q') {
+			break;
+		}
+
+		k4a_capture_release(sensorCapture);
+		k4a_image_release(color_image);
+		k4a_image_release(depth_image);
+		k4a_image_release(colorlike_depth_image);
+		k4a_image_release(point_image);
+
+	}
+
+	k4a_transformation_destroy(k4aTransform);
+	k4a_device_close(device);
+
+	return EXIT_SUCCESS;
+}
+
+int RECORD_TRACKING(int argc, char** argv)
+{
+	char* recordName;
+	string configName = "ConfigData2.yml";
+	string outputName = "results.out";
+	bool isColor = false;
+	bool isMask = false;
+	for (int i=2; i<argc; i++) {
+		if ( string(argv[i]) == "-c") {
+			configName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-r" ) {
+			recordName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-o" ) {
+			outputName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-v" ) {
+			isColor = true;
+		}
+		else if ( string(argv[i]) == "-m" ) {
+			isMask = true;
+		}
+	}
+
+
+	cout << "== RECORD TRACKING =======================" << endl;
 	int timestamp = 1000;
 	k4a_playback_t playback = NULL;
 	k4a_calibration_t calibration;
@@ -56,9 +214,9 @@ int RECORD_TRACKING(char* fileName)
 	k4a_result_t result;
 	k4a_stream_result_t stream_result;
 
-	result = k4a_playback_open(fileName, &playback);
+	result = k4a_playback_open(recordName, &playback);
 	if (result != K4A_RESULT_SUCCEEDED || playback == NULL) {
-		printf("Failed to open recording %s\n", fileName); exit(1);
+		printf("Failed to open recording %s\n", recordName); exit(1);
 	}
 
 	result = k4a_playback_seek_timestamp(playback, timestamp * 1000, K4A_PLAYBACK_SEEK_BEGIN);
@@ -85,16 +243,15 @@ int RECORD_TRACKING(char* fileName)
 	cout << "     4) Depth resolution: " << calibration.depth_camera_calibration.resolution_width << " x "
 								 << calibration.depth_camera_calibration.resolution_height << endl << endl;
 
-	TableTracker tableTracker("./ConfigData2.yml", image_width, image_height);
+	TableTracker tableTracker(configName, outputName, image_width, image_height);
 //	Vector3d ocr(0,0,0); // unit: mm
 	Vector3d ocr(-20,-140,0); // unit: mm
 //	Vector3d ocr(-200,-200,0); // unit: mm
 //	Vector3d ocr(-280,-960,0); // unit: mm
 
-	double time(0);
+	tableTracker.ColorView(isColor);
+	tableTracker.MaskView(isMask);
 	cout << "*** STREAM LOOP START !!" << endl;
-//	tableTracker.ColorView(true);
-//	tableTracker.MaskView(true);
 	while(true)
 	{
 		Timer timer; timer.start();
@@ -110,22 +267,12 @@ int RECORD_TRACKING(char* fileName)
 		k4a_transformation_depth_image_to_color_camera(transformation, depth_image, colorlike_depth_image);
 		k4a_transformation_depth_image_to_point_cloud(transformation, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
 
+		// Read OCR data
 
 		tableTracker.SetOCR(ocr);
-		tableTracker.SetNewImage(uncompressed_color_image, depth_image, point_image);
+		if(isColor) tableTracker.SetNewImage(color_image, depth_image, point_image);
+		else 		tableTracker.SetNewImage(depth_image, point_image);
 		tableTracker.ProcessCurrentFrame();
-
-		cv::Mat color(image_height, image_width, CV_8UC3, cv::Scalar(0,0,0));
-        uchar* color_data = color.data;
-        uint8_t *color_image_data = k4a_image_get_buffer(uncompressed_color_image);
-
-        for (int i=0;i<image_width*image_height; i++) {
-        	color_data[ 3 * i + 0 ] = color_image_data[ 4 * i + 0 ];
-			color_data[ 3 * i + 1 ] = color_image_data[ 4 * i + 1 ];
-			color_data[ 3 * i + 2 ] = color_image_data[ 4 * i + 2 ];
-        }
-        cv::imshow("color", color);
-
 		timer.stop();
 		tableTracker.Render(timer.time());
 
@@ -166,115 +313,22 @@ int RECORD_TRACKING(char* fileName)
 	return EXIT_SUCCESS;
 }
 
-
-
-int TABLE_TRACKING(int argc, char** argv)
-{
-	cout << "== TABLE TRACKING =======================" << endl << endl;
-
-	// Start camera
-	k4a_device_t device = nullptr;
-	VERIFY(k4a_device_open(K4A_DEVICE_DEFAULT, &device), "Open K4A Device failed!");
-
-	// Start camera. Make sure depth camera is enabled.
-	k4a_device_configuration_t deviceConfig = get_default_config();
-	VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
-
-	// Get calibration information
-	k4a_calibration_t sensorCalibration;
-	VERIFY(k4a_device_get_calibration(device, deviceConfig.depth_mode, deviceConfig.color_resolution, &sensorCalibration),
-		   "Get depth camera calibration failed!");
-
-	k4a_capture_t sensorCapture = NULL;
-	k4a_image_t color_image = NULL;
-	k4a_image_t depth_image = NULL;
-	k4a_image_t point_image = NULL;
-	k4a_image_t colorlike_depth_image = NULL;
-	k4a_transformation_t k4aTransform = NULL;
-	k4aTransform = k4a_transformation_create(&sensorCalibration);
-
-	int image_width  = sensorCalibration.color_camera_calibration.resolution_width;
-	int image_height = sensorCalibration.color_camera_calibration.resolution_height;
-
-	TableTracker tableTracker("./ConfigData_test2.yml", image_width,image_height);
-	Vector3d ocr(0,0,0); // lat, long, height
-	cout << ">> Table Tracking" << endl;
-
-	while(true)
-	{
-		Timer timer; timer.start();
-
-		// Capture image
-		k4a_device_get_capture(device, &sensorCapture, 1000);
-		color_image = k4a_capture_get_color_image(sensorCapture);
-		depth_image = k4a_capture_get_depth_image(sensorCapture);
-		point_image = create_point_cloud_based_color(color_image);
-		colorlike_depth_image = create_depth_image_like(color_image);
-		k4a_transformation_depth_image_to_color_camera(k4aTransform, depth_image, colorlike_depth_image);
-		k4a_transformation_depth_image_to_point_cloud(k4aTransform, colorlike_depth_image, K4A_CALIBRATION_TYPE_COLOR, point_image);
-
-		tableTracker.SetOCR(ocr);
-		tableTracker.SetNewImage(color_image, depth_image, point_image);
-		tableTracker.ProcessCurrentFrame();
-
-		cv::Mat color(image_height, image_width, CV_8UC3, cv::Scalar(0,0,0));
-        uchar* color_data = color.data;
-        uint8_t *color_image_data = k4a_image_get_buffer(color_image);
-
-        for (int i=0;i<image_width*image_height; i++) {
-        	color_data[ 3 * i + 0 ] = color_image_data[ 4 * i + 0 ];
-			color_data[ 3 * i + 1 ] = color_image_data[ 4 * i + 1 ];
-			color_data[ 3 * i + 2 ] = color_image_data[ 4 * i + 2 ];
-        }
-
-		timer.stop();
-		tableTracker.Render(timer.time());
-		cv::imshow("color", color);
-
-		transformation_helpers_write_point_cloud(point_image, color_image, "pcd.ply");
-
-		char key = (char)waitKey(1);
-		if (key == 'g') {
-			transformation_helpers_write_point_cloud(point_image, color_image, "pcd.ply");
-		}
-		else if (key == 'o') {
-			tableTracker.DecreaseBotMargin();
-		}
-		else if (key == 'p') {
-			tableTracker.IncreaseBotMargin();
-		}
-		else if (key == '[') {
-			tableTracker.DecreaseTopMargin();
-		}
-		else if (key == ']') {
-			tableTracker.IncreaseTopMargin();
-		}
-		else if (key == 's') {
-			cout <<"Set the OCR data (lateral, longitudinal, height, unit: mm) " << endl;
-			cin >> ocr(0) >> ocr(1) >> ocr(2);
-		}
-		else if (key == 'q') {
-			break;
-		}
-
-		k4a_capture_release(sensorCapture);
-		k4a_image_release(color_image);
-		k4a_image_release(depth_image);
-		k4a_image_release(colorlike_depth_image);
-		k4a_image_release(point_image);
-
-	}
-
-	k4a_transformation_destroy(k4aTransform);
-	k4a_device_close(device);
-
-	return EXIT_SUCCESS;
-}
-
 int CHARUCO_SYNC(int argc, char** argv)
 {
-	cout << "### CHARUO BOARD DETECTION" << endl;
-	//tracking option configuration3
+	string outputName = "world_coord";
+	float scalingFactor = 0.3;
+	for (int i=2; i<argc; i++) {
+		if ( string(argv[i]) == "-o" ) {
+			outputName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-s" ) {
+			scalingFactor = atof(argv[i+1]);
+		}
+	}
+
+	cout << "== CHARUO BOARD DETECTION =======================" << endl;
+	//tracking option configuration
 	string detParm("detector_params.yml");
 	string camParm("kinect3072.yml");
 
@@ -306,7 +360,7 @@ int CHARUCO_SYNC(int argc, char** argv)
 	// Synchronization
 	CharucoSync sync((int)PatientTable::TestDevice);
 	sync.SetParameters(camParm, detParm);
-	sync.SetScalingFactor(0.4f);
+	sync.SetScalingFactor(scalingFactor);
 	bool getData(false);
 	waitKey(1000);
 	while(true)
@@ -347,18 +401,32 @@ int CHARUCO_SYNC(int argc, char** argv)
 	}
 	k4a_device_close(device);
 
-	string coordName = "world_coord";
-	if (argc > 2) coordName = string(argv[2]);
-	cout << ">> Coordinate System is printed: " << coordName << endl;
-	sync.WriteTransformationData(string(coordName));
+	cout << ">> Coordinate System is printed: " << outputName << endl;
+	sync.WriteTransformationData(outputName);
 
 	return EXIT_SUCCESS;
 }
 
-
-int RECORD_CHARUCO_SYNC(char* fileName)
+int RECORD_CHARUCO_SYNC(int argc, char** argv)
 {
-	cout << "### PLAYBACK RECORD CHARUO BOARD DETECTION" << endl;
+	char* recordName;
+	string outputName = "world_coord";
+	float scalingFactor = 0.3;
+	for (int i=2; i<argc; i++) {
+		if ( string(argv[i]) == "-r" ) {
+			recordName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-o" ) {
+			outputName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-s" ) {
+			scalingFactor = atof(argv[i+1]);
+		}
+	}
+
+	cout << "== PLAYBACK RECORD CHARUO BOARD DETECTION =======================" << endl;
 	int timestamp = 1000;
 	k4a_playback_t playback = NULL;
 	k4a_calibration_t sensorCalibration;
@@ -373,9 +441,9 @@ int RECORD_CHARUCO_SYNC(char* fileName)
 	k4a_result_t result;
 	k4a_stream_result_t stream_result;
 
-	result = k4a_playback_open(fileName, &playback);
+	result = k4a_playback_open(recordName, &playback);
 	if (result != K4A_RESULT_SUCCEEDED || playback == NULL) {
-		printf("Failed to open recording %s\n", fileName); exit(1);
+		printf("Failed to open recording %s\n", recordName); exit(1);
 	}
 
 	result = k4a_playback_seek_timestamp(playback, timestamp * 1000, K4A_PLAYBACK_SEEK_BEGIN);
@@ -397,14 +465,14 @@ int RECORD_CHARUCO_SYNC(char* fileName)
 	cout << "   Depth resolution: " << sensorCalibration.depth_camera_calibration.resolution_width << " x "
 								    << sensorCalibration.depth_camera_calibration.resolution_height << endl << endl;
 
-	//tracking option configuration3
+	// Configuration
 	string detParm("detector_params.yml");
 	string camParm("kinect3072.yml");
 
 	// Synchronization
 	CharucoSync sync((int)PatientTable::AlluraXper);
 	sync.SetParameters(camParm, detParm);
-	sync.SetScalingFactor(0.4f);
+	sync.SetScalingFactor(scalingFactor);
 	bool getData(false);
 	waitKey(1000);
 
@@ -451,11 +519,8 @@ int RECORD_CHARUCO_SYNC(char* fileName)
 		k4a_image_release(colorlike_depth_image);
 	}
 	k4a_playback_close(playback);
-	sync.WriteTransformationData("playback_charucoData");
+	sync.WriteTransformationData(outputName);
 
 	return EXIT_SUCCESS;
 }
-//
-//
-//
-//
+
