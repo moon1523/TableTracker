@@ -200,6 +200,7 @@ void TableTracker::Render(double time)
 	isMove = false;
 	isSpike = false;
 	isPCDFile = false;
+	frameNo++;
 }
 
 tuple<double, double, cv::Mat> TableTracker::MatchingData()
