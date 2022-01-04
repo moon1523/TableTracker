@@ -135,7 +135,7 @@ private:
 	vector<double> spike_vec;
 	int frameNo_prev;
 	cv::Mat match_xor_color;
-	bool isMove, isRot, isSpike, isFirst, isFix;
+	bool isMove, isSpike, isFirst;
 	ofstream ofs;
 	double ctime;
 

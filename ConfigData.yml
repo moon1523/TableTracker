@@ -37,6 +37,6 @@ Table_BotMargin(cm): 15
 Mask_CropWidth(px): 500
 Mask_CropHeight(px): 500
 Mask_Rot(deg): 1
-Mask_MaxRot(deg): 40
-Mask_MinRot(deg): -40
+Mask_MaxRot(deg): 90
+Mask_MinRot(deg): -90
 PixelPerLength(px/mm): 0.1

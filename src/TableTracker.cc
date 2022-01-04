@@ -2,7 +2,7 @@
 
 TableTracker::TableTracker(string _config_file, string _output_file, int _image_width, int _image_height)
 : image_width(_image_width), image_height(_image_height),
-  isMove(false), isRot(false), isSpike(false), isFix(false), isFirst(true), ocr(0,0,0), frameNo(0),
+  isMove(false), isSpike(false), isFirst(true), ocr(0,0,0), frameNo(0), ctime(0),
   isColorView(false), isMaskView(false), isPCDFile(false)
 {
 	ReadConfigData(_config_file);
@@ -133,12 +133,6 @@ void TableTracker::ProcessCurrentFrame()
 		cv::bitwise_xor(mask_rot, binPCD, match_xor);
 		get<2>(match_results_filtered) = match_xor;
 
-		if (fabs(mean-get<0>(match_results_raw)) > 3.) {
-			isRot = true;
-		}
-		else {
-			if(!isMove) isFix = true;
-		}
 		match_angleList.pop_front();
 	}
 	match_results_prev = match_results;
@@ -170,23 +164,7 @@ void TableTracker::Render(double time)
 	cv::Point(10,mask_height-60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
 	double angle = get<0>(match_results_filtered);
 
-	if (isFix) {
-		cv::putText(match_mat, "FIX", cv::Point(10,60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
-	}
-	else if (isSpike) {
-		cv::putText(match_mat, "SPIKE", cv::Point(10,60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
-	}
-	else if (isRot) {
-		cv::putText(match_mat, "ROT", cv::Point(10,60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
-	}
-	else if (isMove) {
-		cv::putText(match_mat, "MOVE", cv::Point(10,60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
-	}
-	else if (isMove && isRot) {
-		cv::putText(match_mat, "MOVE & ROT", cv::Point(10,60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
-	}
-
-	cv::putText(match_mat, "Frame #: " + to_string(frameNo++),
+	cv::putText(match_mat, "Frame #: " + to_string(frameNo),
 			cv::Point(10,30), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
 	cv::putText(match_mat, "Frame Time (s): " + to_string(time),
 			cv::Point(10,mask_height-20), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
@@ -216,11 +194,10 @@ void TableTracker::Render(double time)
 
 
 	// Print Results
-	ofs << time << "\t" << get<0>(match_results_raw) << "\t" << get<0>(match_results_filtered) << endl;
+	ctime += time;
+	ofs << ctime << "\t" << get<0>(match_results_raw) << "\t" << get<0>(match_results_filtered) << endl;
 
 	isMove = false;
-	isRot = false;
-	isFix = false;
 	isSpike = false;
 	isPCDFile = false;
 }
