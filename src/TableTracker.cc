@@ -23,6 +23,8 @@ TableTracker::~TableTracker()
 	ofs.close();
 }
 
+// 1. Configuration
+//
 void TableTracker::ReadCharucoData(string charucoData)
 {
 	ifstream ifs(charucoData);
@@ -37,8 +39,6 @@ void TableTracker::ReadCharucoData(string charucoData)
 	ifs.close();
 }
 
-// 1. Configuration
-//
 void TableTracker::ReadConfigData(string configData)
 {
 	cv::FileStorage fs(configData, cv::FileStorage::READ);
@@ -125,6 +125,7 @@ void TableTracker::ConfigTableData()
 {
 	double table_RotCenter[3];
 	for (int i=0;i<3;i++) {
+
 		table_topPoint[i] = world_origin[i] + world_normal[i] * (table_height + table_topMargin);
 		table_botPoint[i] = world_origin[i] + world_normal[i] * (table_height - table_botMargin);
 		table_RotCenter[i] = table_rotCenter(i);
@@ -153,41 +154,66 @@ void TableTracker::ConfigMaskData()
 	mask_data = (uchar*)mask.data;
 	mask_color_data = (uchar*)mask_color.data;
 	mask_sum = table_width * pixelPerLength * table_length * pixelPerLength * 255;
+}
+
+
+// 2. Tracking
+//
+void TableTracker::SetOCR(Vector3d _ocr) {
+	if (ocr != _ocr)
+		isMove = true;
+
+	ocr = _ocr;
+	for (int i=0; i<3; i++) {
+		tf_table_topPoint[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
+		tf_table_botPoint[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
+		tf_table_position[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
+	}
+
+	if (isMove || isFirst) {
+		table_position_pixel_x += ocr[0] * pixelPerLength;
+		table_position_pixel_y -= ocr[1] * pixelPerLength;
+		GenerateRectangleTableMask();
+		table_position_pixel_x -= ocr[0] * pixelPerLength;
+		table_position_pixel_y += ocr[1] * pixelPerLength;
+	}
+}
+
+void TableTracker::GenerateRectangleTableMask()
+{
+	int table_pixelWidth = table_width  * pixelPerLength;
+	int table_pixelLength = table_length * pixelPerLength;
 
 	mask_minX = table_position_pixel_x;
-	mask_maxX = mask_minX + table_width  * pixelPerLength;
+	mask_maxX = mask_minX + table_pixelWidth;
 	mask_minY = table_position_pixel_y;
-	mask_maxY = mask_minY + table_length * pixelPerLength;
+	mask_maxY = mask_minY + table_pixelLength;
 
 	if (mask_minX < 0) mask_minX = 0;
 	if (mask_minY < 0) mask_minY = 0;
 	if (mask_maxX > mask_width)  mask_maxX = mask_width;
 	if (mask_maxY > mask_height) mask_maxY = mask_height;
 
-	GenerateRectangleTableMask();
-}
-
-void TableTracker::GenerateRectangleTableMask()
-{
 	mask = cv::Mat::zeros(mask_height, mask_width, CV_8UC1);
-	if(isColorView) mask_color = cv::Mat::zeros(mask_height, mask_width, CV_8UC3);
+	if(isColorView && isMaskView) mask_color = cv::Mat::zeros(mask_height, mask_width, CV_8UC3);
 	for (int y = mask_minY; y < mask_maxY; y++) {
 		for (int x = mask_minX; x < mask_maxX; x++) {
 
-			mask_data[ y * mask_width + x ] = 255
-					* ((y-mask_minY)/(double)(table_length * pixelPerLength))
-					* ((y-mask_minY)/(double)(table_length * pixelPerLength));
+			mask_data[ y * mask_width + x ] = 255 * ((y-mask_minY)/(double)table_pixelLength) * ((y-mask_minY)/(double)table_pixelLength);
 
-			if (isColorView || isFirst) {
+			if(isColorView && isMaskView) {
 				mask_color_data[ (y * mask_width + x) * 3 + 0 ] = 255;
 				mask_color_data[ (y * mask_width + x) * 3 + 1 ] = 255;
 				mask_color_data[ (y * mask_width + x) * 3 + 2 ] = 255;
 			}
+
 		}
 	}
 
 	mask_vec.clear();
-	if(isColorView) mask_color_vec.clear();
+	if(isColorView && isMaskView) {
+		mask_color_vec.clear();
+	}
 	for (int i=mask_minRotDeg; i<=mask_maxRotDeg; i+=mask_deg) {
 		cv::Mat mask_rot, rotM, mask_color_rot;
 		mask.copyTo(mask_rot);
@@ -195,7 +221,9 @@ void TableTracker::GenerateRectangleTableMask()
 		cv::warpAffine(mask, mask_rot, rotM, mask_rot.size());
 		cv::warpAffine(mask_color, mask_color_rot, rotM, mask_color_rot.size());
 		mask_vec.push_back(mask_rot);
-		if(isColorView) mask_color_vec.push_back(mask_color_rot);
+		if(isColorView && isMaskView) {
+			mask_color_vec.push_back(mask_color_rot);
+		}
 	}
 
 	if (isMaskView && isFirst) {
@@ -210,7 +238,10 @@ void TableTracker::GenerateRectangleTableMask()
 									 cv::Point(10,20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255), 1);
 			cv::putText(mask_vec[idx], "Table Degree: "+ to_string(mask_minRotDeg + idx * mask_deg),
 									 cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255), 1);
+
 			imshow("mask_rot", mask_vec[idx++]);
+
+
 			char key = (char)cv::waitKey(1000);
 
 			if (key == 'c') continue;
@@ -220,6 +251,7 @@ void TableTracker::GenerateRectangleTableMask()
 			}
 		}
 	}
+
 }
 
 void TableTracker::PrintConfigData()
@@ -249,27 +281,6 @@ void TableTracker::PrintConfigData()
 	cout << endl;
 }
 
-// 2. Tracking
-//
-void TableTracker::SetOCR(Vector3d _ocr) {
-	if (ocr != _ocr)
-		isMove = true;
-
-	ocr = _ocr;
-	for (int i=0; i<3; i++) {
-		tf_table_topPoint[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
-		tf_table_botPoint[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
-		tf_table_position[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
-	}
-
-	if (isMove) {
-		table_position_pixel_x += ocr[0] * pixelPerLength;
-		table_position_pixel_y -= ocr[1] * pixelPerLength;
-		GenerateRectangleTableMask();
-		table_position_pixel_x -= ocr[0] * pixelPerLength;
-		table_position_pixel_y += ocr[1] * pixelPerLength;
-	}
-}
 
 cv::Mat TableTracker::GenerateTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t depth_image)
 {
@@ -395,6 +406,7 @@ void TableTracker::ProcessCurrentFrame()
 }
 
 
+
 void TableTracker::Render(double time)
 {
 	cv::Mat match_mat, match_mat_color;
@@ -470,13 +482,12 @@ tuple<double, double, cv::Mat> TableTracker::MatchingData()
 
 		// Find the most similar mask
 		if (max_sim < similarity) {
-			// bitwise_xor does not affect the matching results
-			if(isMaskView) {
-				cv::bitwise_xor(mask_vec[idx], binPCD, match_xor);
-				if(isColorView) {
-					cv::bitwise_xor(mask_color_vec[idx], colorPCD, match_xor_color);
-				}
+			// bitwise xor is used to view, not affect the mathcing results
+			cv::bitwise_xor(mask_vec[idx], binPCD, match_xor);
+			if(isColorView && isMaskView){
+				cv::bitwise_xor(mask_color_vec[idx], colorPCD, match_xor_color);
 			}
+
 			match_mat = match_xor;
 			max_sim = similarity;
 			match_deg = mask_minRotDeg + idx * mask_deg;
@@ -489,8 +500,11 @@ tuple<double, double, cv::Mat> TableTracker::MatchingData()
 	return make_tuple(match_deg, max_sim, match_mat);
 }
 
+
+
 // 3. Option
 //
+
 cv::Mat TableTracker::GenerateColorTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t color_image)
 {
 	int16_t *point_cloud_image_data = (int16_t*)(void*)k4a_image_get_buffer(point_cloud_image);
@@ -636,3 +650,5 @@ void TableTracker::DecreaseBotMargin() {
 		table_botPoint[i] = world_origin[i] + world_normal[i] * (table_height - table_botMargin);
 	transform->TransformPoint(table_botPoint, tf_table_botPoint);
 }
+
+

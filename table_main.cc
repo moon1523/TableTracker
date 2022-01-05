@@ -265,6 +265,7 @@ int RECORD_TRACKING(int argc, char** argv)
 								 << calibration.depth_camera_calibration.resolution_height << endl << endl;
 
 	TableTracker tableTracker("HYUMC.coord" ,configName, outputName, image_width, image_height);
+
 //	Vector3d ocr(0,0,0); // unit: mm
 	Vector3d ocr(-20,-140,0); // unit: mm
 //	Vector3d ocr(-200,-200,0); // unit: mm
