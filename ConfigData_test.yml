@@ -1,42 +1,27 @@
 %YAML:1.0
-World_Quaternion(x,y,z,w):
-   rows: 1
-   cols: 4
-   dt: d
-   data: [-0.917037, 0.00282499, -0.0314729, -0.397548]
-World_Translation(cm): 
-   rows: 1
-   cols: 3
-   dt: d
-   data: [-32.3519, 25.6945, 65.9683]
-VirtualCamera_Position(cm):
-   rows: 1
-   cols: 3
-   dt: d
-   data: [25, 10, 60]
-Table_Reference_by_ChArUco2(cm):
+Table_Reference(cm):
    rows: 1
    cols: 3
    dt: d
    data: [25, 20, 31]
-Table_RotationCenter_by_ChArUco2(cm):
+Table_Reference_to_Position(cm):
+   rows: 1
+   cols: 3
+   dt:   d
+   data: [0, 0, 0]
+Table_RotationCenter(cm):
    rows: 1
    cols: 3
    dt:   d
    data: [29, 11, 0]
-Table_Reference_to_Position(cm): 0
-Table_ChArUco_Calibration_x(cm): 0
-Table_ChArUco_Calibration_y(cm): 0
-Table_Calibration_x(cm): 0
-Table_Calibration_y(cm): 0
 Table_Width(cm): 5.5
 Table_Length(cm): 22.5
-Table_Height(cm): 31
+Table_Height_at_0(cm): 31
 Table_TopMargin(cm): 5
 Table_BotMargin(cm): 5
-Mask_CropWidth(px): 500
-Mask_CropHeight(px): 500
 Mask_Rot(deg): 1
 Mask_MaxRot(deg): 90
 Mask_MinRot(deg): -90
+Crop_Width(mm): 500
+Crop_Height(mm): 500
 PixelPerLength(px/mm): 1

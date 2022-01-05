@@ -104,7 +104,7 @@ int TABLE_TRACKING(int argc, char** argv)
 	int image_width  = sensorCalibration.color_camera_calibration.resolution_width;
 	int image_height = sensorCalibration.color_camera_calibration.resolution_height;
 
-	TableTracker tableTracker("track.coord", configName, outputName, image_width,image_height);
+	TableTracker tableTracker("test.coord", configName, outputName, image_width,image_height);
 
 	Vector3d ocr(0,0,0); // lat, long, height
 	tableTracker.ColorView(isColor);

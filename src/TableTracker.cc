@@ -153,30 +153,30 @@ void TableTracker::ConfigMaskData()
 	mask_data = (uchar*)mask.data;
 	mask_color_data = (uchar*)mask_color.data;
 	mask_sum = table_width * pixelPerLength * table_length * pixelPerLength * 255;
-	GenerateRectangleTableMask();
-}
-
-void TableTracker::GenerateRectangleTableMask()
-{
-	int table_pixelWidth = table_width  * pixelPerLength;
-	int table_pixelLength = table_length * pixelPerLength;
 
 	mask_minX = table_position_pixel_x;
-	mask_maxX = mask_minX + table_pixelWidth;
+	mask_maxX = mask_minX + table_width  * pixelPerLength;
 	mask_minY = table_position_pixel_y;
-	mask_maxY = mask_minY + table_pixelLength;
+	mask_maxY = mask_minY + table_length * pixelPerLength;
 
 	if (mask_minX < 0) mask_minX = 0;
 	if (mask_minY < 0) mask_minY = 0;
 	if (mask_maxX > mask_width)  mask_maxX = mask_width;
 	if (mask_maxY > mask_height) mask_maxY = mask_height;
 
+	GenerateRectangleTableMask();
+}
+
+void TableTracker::GenerateRectangleTableMask()
+{
 	mask = cv::Mat::zeros(mask_height, mask_width, CV_8UC1);
 	if(isColorView) mask_color = cv::Mat::zeros(mask_height, mask_width, CV_8UC3);
 	for (int y = mask_minY; y < mask_maxY; y++) {
 		for (int x = mask_minX; x < mask_maxX; x++) {
 
-			mask_data[ y * mask_width + x ] = 255 * ((y-mask_minY)/(double)table_pixelLength) * ((y-mask_minY)/(double)table_pixelLength);
+			mask_data[ y * mask_width + x ] = 255
+					* ((y-mask_minY)/(double)(table_length * pixelPerLength))
+					* ((y-mask_minY)/(double)(table_length * pixelPerLength));
 
 			if (isColorView || isFirst) {
 				mask_color_data[ (y * mask_width + x) * 3 + 0 ] = 255;
@@ -195,10 +195,10 @@ void TableTracker::GenerateRectangleTableMask()
 		cv::warpAffine(mask, mask_rot, rotM, mask_rot.size());
 		cv::warpAffine(mask_color, mask_color_rot, rotM, mask_color_rot.size());
 		mask_vec.push_back(mask_rot);
-		mask_color_vec.push_back(mask_color_rot);
+		if(isColorView) mask_color_vec.push_back(mask_color_rot);
 	}
 
-	if (isMaskView) {
+	if (isMaskView && isFirst) {
 		cout << " Press 'c' to skip the present frame " << endl;
 		cout << " Press 'q' to quit " << endl;
 		int idx(0);
@@ -419,10 +419,10 @@ void TableTracker::Render(double time)
 			cv::Point(10,mask_height-20), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
 
 
-	cv::Mat match_color;
-	cv::cvtColor(match_mat, match_color, cv::COLOR_GRAY2BGR);
-	cv::circle(match_color, cv::Point(table_rotCenter_pixel_x,table_rotCenter_pixel_y), 2.0,cv::Scalar(255,0,255), 3, 8, 0);
-	cv::imshow("TableTracker", match_color);
+	cv::Mat match_mat_cvt;
+	cv::cvtColor(match_mat, match_mat_cvt, cv::COLOR_GRAY2BGR);
+	cv::circle(match_mat_cvt, cv::Point(table_rotCenter_pixel_x,table_rotCenter_pixel_y), 2.0,cv::Scalar(255,0,255), 3, 8, 0);
+	cv::imshow("TableTracker", match_mat_cvt);
 
 	if(isColorView) {
 		cv::Mat color(image_height, image_width, CV_8UC3, cv::Scalar(0,0,0));
@@ -436,6 +436,7 @@ void TableTracker::Render(double time)
 		}
 		cv::putText(match_mat_color, "Raw matching mask",
 				cv::Point(10,mask_height-20), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar::all(255), 1.5);
+		cv::circle(match_mat_color, cv::Point(table_rotCenter_pixel_x,table_rotCenter_pixel_y), 2.0,cv::Scalar(255,0,255), 3, 8, 0);
 
 		cv::imshow("Kinect_Color", color);
 		cv::imshow("TableTracker_Color", match_mat_color);
