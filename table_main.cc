@@ -12,32 +12,32 @@ int RECORD_CHARUCO_SYNC(int, char**);
 
 void PrintUsage()
 {
-    cout << ">> Usage" << endl;
-    cout << "  ./table_tracker -track  -c [config.yml] -o [output] (-v) (-m)" << endl;
-    cout << "  ./table_tracker -rtrack -c [config.yml] -r [record.mkv] -o [output] (-v) (-m)" << endl;
-    cout << "  ./table_tracker -sync   -o [output] -s [s_factor]" << endl;
-    cout << "  ./table_tracker -rsync  -r [record.mkv] -o [output] -s [s_factor]" << endl << endl;
+    cout << "  >> Usage" << endl;
+    cout << "    ./table_tracker -track  -c [config.yml] -o [output] (-v) (-m)" << endl;
+    cout << "    ./table_tracker -rtrack -c [config.yml] -r [record.mkv] -o [output] (-v) (-m)" << endl;
+    cout << "    ./table_tracker -sync   -o [output] -s [s_factor]" << endl;
+    cout << "    ./table_tracker -rsync  -r [record.mkv] -o [output] -s [s_factor]" << endl << endl;
 
-    cout << "  -v: color view" << endl;
-    cout << "  -m: mask view" << endl;
-    cout << "  -s: scaling factor" << endl;
-    cout << "  [config.yml] default = ConfigData.yml" << endl;
-    cout << "  [output]     default = results.out " << endl;
-    cout << "  [s_factor]   default = 0.3" << endl;
-    cout << "  [record.mkv] can be acquired by k4aviewer" << endl << endl;
+    cout << "    -v: color view" << endl;
+    cout << "    -m: mask view" << endl;
+    cout << "    -s: scaling factor" << endl;
+    cout << "    [config.yml] default = ConfigData.yml" << endl;
+    cout << "    [output]     default = results.out " << endl;
+    cout << "    [s_factor]   default = 0.3" << endl;
+    cout << "    [record.mkv] can be acquired by k4aviewer" << endl << endl;
 
-    cout << ">> Key down" << endl;
-    cout << "   Tracking mode" << endl;
-    cout << "     'g'     : Generate Point Cloud PLY File for the present frame (pcd, tf_pcd)" << endl;
-    cout << "     'o', 'p': Decrease/Increase bot margin" << endl;
-    cout << "     '[', ']': Decrease/Increase top margin" << endl;
-    cout << "     's'     : Set OCR data manually" << endl;
-    cout << "     'q'     : Exit" << endl;
-    cout << "   ChArUco Sync mode" << endl;
-    cout << "     'a'     : Show average data" << endl;
-    cout << "     'c'     : Clear the accumulative data" << endl;
-    cout << "     't'     : Start or Stop the data accumulation" << endl;
-    cout << "     'q'     : Exit" << endl << endl;
+    cout << "  >> Key down" << endl;
+    cout << "     Tracking mode" << endl;
+    cout << "       'g'     : Generate Point Cloud PLY File for the present frame (pcd, tf_pcd)" << endl;
+    cout << "       'o', 'p': Decrease/Increase bot margin" << endl;
+    cout << "       '[', ']': Decrease/Increase top margin" << endl;
+    cout << "       's'     : Set OCR data manually" << endl;
+    cout << "       'q'     : Exit" << endl;
+    cout << "     ChArUco Sync mode" << endl;
+    cout << "       'a'     : Show average data" << endl;
+    cout << "       'c'     : Clear the accumulative data" << endl;
+    cout << "       't'     : Start or Stop the data accumulation" << endl;
+    cout << "       'q'     : Exit" << endl << endl;
 }
 
 int main(int argc, char** argv)
@@ -104,9 +104,9 @@ int TABLE_TRACKING(int argc, char** argv)
 	int image_width  = sensorCalibration.color_camera_calibration.resolution_width;
 	int image_height = sensorCalibration.color_camera_calibration.resolution_height;
 
-	TableTracker tableTracker(configName, outputName, image_width,image_height);
-	Vector3d ocr(0,0,0); // lat, long, height
+	TableTracker tableTracker("track.coord", configName, outputName, image_width,image_height);
 
+	Vector3d ocr(0,0,0); // lat, long, height
 	tableTracker.ColorView(isColor);
 	tableTracker.MaskView(isMask);
 	cout << "*** STREAM LOOP START !!" << endl;
@@ -254,7 +254,7 @@ int RECORD_TRACKING(int argc, char** argv)
 	cout << "     4) Depth resolution: " << calibration.depth_camera_calibration.resolution_width << " x "
 								 << calibration.depth_camera_calibration.resolution_height << endl << endl;
 
-	TableTracker tableTracker(configName, outputName, image_width, image_height);
+	TableTracker tableTracker("HYUMC.coord" ,configName, outputName, image_width, image_height);
 //	Vector3d ocr(0,0,0); // unit: mm
 	Vector3d ocr(-20,-140,0); // unit: mm
 //	Vector3d ocr(-200,-200,0); // unit: mm

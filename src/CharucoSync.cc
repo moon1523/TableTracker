@@ -199,8 +199,8 @@ void CharucoSync::WriteTransformationData(string fileName){
     ofstream ofs(fileName);
     Vector4d q = quaternionAverage(quaternions);
     Vec3d t = tvec_sum / (double)quaternions.size();
-    ofs<<"q "<< q(0) <<", "<<q(1)<<", "<<q(2)<<", "<<q(3)<<endl;
-    ofs<<"t "<<t(0)*100<<", "<<t(1)*100<<", "<<t(2)*100<<endl;
+    ofs<<"q "<< q(0) <<" "<<q(1)<<" "<<q(2)<<" "<<q(3)<<endl;
+    ofs<<"t "<<t(0)*100<<" "<<t(1)*100<<" "<<t(2)*100<<endl;
     time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
     ofs<<ctime(&now)<<endl;
     ofs<<endl;

@@ -10,7 +10,7 @@ k4a_device_configuration_t get_default_config()
 	camera_config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
 	camera_config.color_resolution = K4A_COLOR_RESOLUTION_720P;
 	camera_config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
-	camera_config.camera_fps = K4A_FRAMES_PER_SECOND_30;
+	camera_config.camera_fps = K4A_FRAMES_PER_SECOND_15;
 	camera_config.subordinate_delay_off_master_usec = 0;
 	camera_config.synchronized_images_only = true;
 

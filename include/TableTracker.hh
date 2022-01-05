@@ -33,12 +33,20 @@ using namespace Eigen;
 
 class TableTracker {
 public:
-	TableTracker(string config_file, string output_file, int image_width, int image_height);
+	TableTracker(string charuco_file, string config_file, string output_file, int image_width, int image_height);
 	~TableTracker();
 
-	void ColorView(bool _isColorView) { isColorView = _isColorView; }
-	void MaskView(bool _isMaskView) { isMaskView = _isMaskView; }
+	// 1. Configuration
+	void ReadCharucoData (string fileName);
+	void ReadConfigData(string fileName);
+	void ConfigTransform();
+	void ConfigTableData();
+	void ConfigMaskData();
+	void PrintConfigData();
+	void GenerateRectangleTableMask();
 
+	// 2. Tracking
+	void SetOCR(Vector3d _ocr);
 	void SetNewImage(k4a_image_t depth_image, k4a_image_t point_image) {
 		depth_img = depth_image;
 		point_img = point_image;
@@ -48,25 +56,15 @@ public:
 		depth_img = depth_image;
 		point_img = point_image;
 	}
-	void SetOCR(Vector3d _ocr);
-
-	// Configuration
-	void ReadConfigData(string fileName);
-	void ConfigVirtualCamera();
-	void ConfigTableData();
-	void ConfigMaskData();
-	void PrintConfigData();
-
-	// Mask
-	void GenerateRectangleTableMask();
-
-	// Tracking
 	cv::Mat GenerateTablePointCloud(const k4a_image_t point_cloud_image, const k4a_image_t depth_image);
 	void ProcessCurrentFrame();
 	void Render(double time);
 	tuple<double, double, cv::Mat> MatchingData();
 
-	// Option
+
+	// 3. Option
+	void ColorView(bool _isColorView) { isColorView = _isColorView; }
+	void MaskView(bool _isMaskView) { isMaskView = _isMaskView; }
 	void GeneratePointCloudFile() {
 		cout << "Generate Point Cloud PLY file: " << frameNo << ".ply/tf_ply" << endl;
 		isPCDFile = true;
@@ -81,10 +79,13 @@ public:
 private:
 	// Image
 	k4a_image_t color_img, depth_img, point_img;
-	double pixelPerLength;
 	int frameNo;
 	cv::Mat binPCD, colorPCD;
 	int image_width, image_height;
+	double crop_width, crop_height;
+	double pixelPerLength;
+	bool isColorView, isMaskView, isPCDFile;
+	Vector3d ocr;
 
 	// Mask
 	int mask_width, mask_height;
@@ -95,11 +96,6 @@ private:
 	int mask_sum;
 	vector<cv::Mat> mask_vec, mask_color_vec;
 	int mask_minX, mask_maxX, mask_minY, mask_maxY;
-
-	// Virtual Camera
-	vtkSmartPointer<vtkTransform> transform;
-	Vector3d vcam_position;
-	int vcam_pixel_x, vcam_pixel_y;
 
 	// World
 	Quaterniond world_quat;
@@ -113,14 +109,11 @@ private:
 	double table_width, table_length, table_height;
 	double table_topPoint[3], table_botPoint[3];
 	double table_topMargin, table_botMargin;
-	double table_reference_to_position;
-	double table_charuco_calibration_x, table_charuco_calibration_y;
-	double table_calibration_x, table_calibration_y;
 	int table_position_pixel_x, table_position_pixel_y;
 	int table_rotCenter_pixel_x, table_rotCenter_pixel_y;
 
 	// Transformation
-	double tf_vcam_position[3];
+	vtkSmartPointer<vtkTransform> transform;
 	double tf_world_normal[3];
 	double tf_world_axisX[3], tf_world_axisY[3], tf_world_axisZ[3];
 	double tf_table_topPoint[3], tf_table_botPoint[3];
@@ -138,12 +131,6 @@ private:
 	bool isMove, isSpike, isFirst;
 	ofstream ofs;
 	double ctime;
-
-	// OCR
-	Vector3d ocr;
-
-	// View
-	bool isColorView, isMaskView, isPCDFile;
 };
 
 

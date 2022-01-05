@@ -1,42 +1,27 @@
 %YAML:1.0
-World_Quaternion(x,y,z,w):
-   rows: 1
-   cols: 4
-   dt: d
-   data: [-0.840451, 0.0181034, -0.0334588, -0.540551]
-World_Translation(cm): 
+Table_Reference(cm):
    rows: 1
    cols: 3
    dt: d
-   data: [-125.145, 123.716, 286.571]
-VirtualCamera_Position(cm):
-   rows: 1
-   cols: 3
-   dt: d
-   data: [100, 50, 300]
-Table_Reference_by_ChArUco2(cm):
-   rows: 1
-   cols: 3
-   dt: d
-   data: [130.995, 32.206, 85.1807]
-Table_RotationCenter_by_ChArUco2(cm):
+   data: [92.995, 79.006, 85.1807]
+Table_Reference_to_Position(cm):
    rows: 1
    cols: 3
    dt:   d
-   data: [151.424, -3.63589, 88.9577]
-Table_Reference_to_Position(cm): 203
-Table_ChArUco_Calibration_x(cm): -38
-Table_ChArUco_Calibration_y(cm): 46.8
-Table_Calibration_x(cm): 6
-Table_Calibration_y(cm): 0
-Table_Width(cm): 60
+   data: [0, 203, 0]
+Table_RotationCenter(cm):
+   rows: 1
+   cols: 3
+   dt:   d
+   data: [113.424, 43.16411, 88.9577]
+Table_Width(cm): 55
 Table_Length(cm): 320
-Table_Height(cm): 95
+Table_Height_at_0(cm): 95
 Table_TopMargin(cm): 20
 Table_BotMargin(cm): 15
-Mask_CropWidth(px): 500
-Mask_CropHeight(px): 500
 Mask_Rot(deg): 1
 Mask_MaxRot(deg): 90
 Mask_MinRot(deg): -90
+Crop_Width(mm): 5000
+Crop_Height(mm): 5000
 PixelPerLength(px/mm): 0.1
