@@ -61,6 +61,7 @@ int TABLE_TRACKING(int argc, char** argv)
 {
 	string configName = "ConfigData_test.yml";
 	string outputName = "results.out";
+	string coordName = "test.coord";
 	bool isColor = false;
 	bool isMask = false;
 	for (int i=2; i<argc; i++) {
@@ -70,6 +71,10 @@ int TABLE_TRACKING(int argc, char** argv)
 		}
 		else if ( string(argv[i]) == "-o" ) {
 			outputName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-qt" ) {
+			coordName = argv[i+1];
 			i++;
 		}
 		else if ( string(argv[i]) == "-v" ) {
@@ -104,7 +109,7 @@ int TABLE_TRACKING(int argc, char** argv)
 	int image_width  = sensorCalibration.color_camera_calibration.resolution_width;
 	int image_height = sensorCalibration.color_camera_calibration.resolution_height;
 
-	TableTracker tableTracker("test.coord", configName, outputName, image_width,image_height);
+	TableTracker tableTracker(coordName, configName, outputName, image_width,image_height);
 
 	Vector3d ocr(0,0,0); // lat, long, height
 	tableTracker.ColorView(isColor);
@@ -186,6 +191,7 @@ int RECORD_TRACKING(int argc, char** argv)
 	char* recordName;
 	string configName = "ConfigData.yml";
 	string outputName = "results.out";
+	string coordName = "HYUMC.coord";
 	bool isColor = false;
 	bool isMask = false;
 	for (int i=2; i<argc; i++) {
@@ -199,6 +205,10 @@ int RECORD_TRACKING(int argc, char** argv)
 		}
 		else if ( string(argv[i]) == "-o" ) {
 			outputName = argv[i+1];
+			i++;
+		}
+		else if ( string(argv[i]) == "-qt" ) {
+			coordName = argv[i+1];
 			i++;
 		}
 		else if ( string(argv[i]) == "-v" ) {
