@@ -24,9 +24,6 @@
 
 #include <vtkTransform.h>
 #include <vtkSmartPointer.h>
-#include <vtkPlane.h>
-#include <vtkMath.h>
-#include <vtkMatrix4x4.h>
 
 using namespace std;
 using namespace Eigen;
