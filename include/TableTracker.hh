@@ -97,25 +97,24 @@ private:
 	// World
 	Quaterniond world_quat;
 	Vector3d world_trans;
-	double world_origin[3], world_normal[3];
-	double world_axisX[3], world_axisY[3], world_axisZ[3];
+	double world_origin[3], world_normal[3], world_axisX[3], world_axisY[3], world_axisZ[3];
 
 	// Table
 	Vector3d table_rotCenter;
-	double table_position[3];
+	double table_edge[3];
 	double table_width, table_length, table_height;
 	double table_topPoint[3], table_botPoint[3];
 	double table_topMargin, table_botMargin;
-	int table_position_pixel_x, table_position_pixel_y;
+	int table_edge_pixel_x, table_edge_pixel_y;
 	int table_rotCenter_pixel_x, table_rotCenter_pixel_y;
 
 	// Transformation
 	vtkSmartPointer<vtkTransform> transform;
-	double tf_world_normal[3];
-	double tf_world_axisX[3], tf_world_axisY[3], tf_world_axisZ[3];
-	double tf_table_topPoint[3], tf_table_botPoint[3];
+	double tf_world_normal[3], tf_world_axisX[3], tf_world_axisY[3], tf_world_axisZ[3];
 	double tf_table_rotCenter[3];
-	double tf_table_position[3];
+	double tf_table_edge[3];
+	double tf_table_topPoint[3], tf_table_botPoint[3];
+
 
 	// Match
 	tuple<double, double, cv::Mat> match_results_raw;

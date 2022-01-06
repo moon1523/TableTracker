@@ -45,10 +45,10 @@ void TableTracker::ReadConfigData(string configData)
 	if (!fs.isOpened()) {
 		cerr << "Fail to read config data" << endl; exit(1);
 	}
-	cv::Mat cvMat_ref, cvMat_rot, cvMat_r2p;
-	MatrixXd eMat_ref, eMat_rot, eMat_r2p;
+	cv::Mat cvMat_ref, cvMat_rot, cvMat_r2e;
+	MatrixXd eMat_ref, eMat_rot, eMat_r2e;
 	fs["Table_Reference(cm)"] >> cvMat_ref;
-	fs["Table_Reference_to_Position(cm)"] >> cvMat_r2p;;
+	fs["Table_Reference_to_Edge(cm)"] >> cvMat_r2e;
 	fs["Table_RotationCenter(cm)"] >> cvMat_rot;
 	fs["Table_Width(cm)"] >> table_width;
 	fs["Table_Length(cm)"] >> table_length;
@@ -63,15 +63,15 @@ void TableTracker::ReadConfigData(string configData)
 	fs["PixelPerLength(px/mm)"] >> pixelPerLength;
 	fs.release();
 
-	// Table position (upper left point)
+	// Table edge (upper left point)
 	cv::cv2eigen(cvMat_ref, eMat_ref);
-	cv::cv2eigen(cvMat_r2p, eMat_r2p);
+	cv::cv2eigen(cvMat_r2e, eMat_r2e);
 	Vector3d table_ref = world_trans +
 			world_quat.matrix() * Vector3d(eMat_ref(0,0)*10, eMat_ref(0,1)*10, eMat_ref(0,2)*10);
 
-	table_position[0] = table_ref(0) + ( world_quat.matrix() * Vector3d(eMat_r2p(0,0)*10, eMat_r2p(0,1)*10, eMat_r2p(0,2)*10) )(0);
-	table_position[1] = table_ref(1) + ( world_quat.matrix() * Vector3d(eMat_r2p(0,0)*10, eMat_r2p(0,1)*10, eMat_r2p(0,2)*10) )(1);
-	table_position[2] = table_ref(2) + ( world_quat.matrix() * Vector3d(eMat_r2p(0,0)*10, eMat_r2p(0,1)*10, eMat_r2p(0,2)*10) )(2);
+	table_edge[0] = table_ref(0) + ( world_quat.matrix() * Vector3d(eMat_r2e(0,0)*10, eMat_r2e(0,1)*10, eMat_r2e(0,2)*10) )(0);
+	table_edge[1] = table_ref(1) + ( world_quat.matrix() * Vector3d(eMat_r2e(0,0)*10, eMat_r2e(0,1)*10, eMat_r2e(0,2)*10) )(1);
+	table_edge[2] = table_ref(2) + ( world_quat.matrix() * Vector3d(eMat_r2e(0,0)*10, eMat_r2e(0,1)*10, eMat_r2e(0,2)*10) )(2);
 
 	// Table rotation center
 	cv::cv2eigen(cvMat_rot, eMat_rot);
@@ -134,15 +134,15 @@ void TableTracker::ConfigTableData()
 	transform->TransformPoint(table_topPoint, tf_table_topPoint);
 	transform->TransformPoint(table_botPoint, tf_table_botPoint);
 	transform->TransformPoint(table_RotCenter, tf_table_rotCenter);
-	transform->TransformPoint(table_position, tf_table_position);
+	transform->TransformPoint(table_edge, tf_table_edge);
 
-	table_position_pixel_x  = tf_table_position[0]  * pixelPerLength + mask_width  * 0.5;
-	table_position_pixel_y  = tf_table_position[1]  * pixelPerLength + mask_height * 0.5;
+	table_edge_pixel_x  = tf_table_edge[0]  * pixelPerLength + mask_width  * 0.5;
+	table_edge_pixel_y  = tf_table_edge[1]  * pixelPerLength + mask_height * 0.5;
 	table_rotCenter_pixel_x = tf_table_rotCenter[0] * pixelPerLength + mask_width  * 0.5;
 	table_rotCenter_pixel_y = tf_table_rotCenter[1] * pixelPerLength + mask_height * 0.5;
 
-	assert(0 < table_position_pixel_x && table_position_pixel_x < mask_width);
-	assert(0 < table_position_pixel_y && table_position_pixel_y < mask_height);
+	assert(0 < table_edge_pixel_x && table_edge_pixel_x < mask_width);
+	assert(0 < table_edge_pixel_y && table_edge_pixel_y < mask_height);
 	assert(0 < table_rotCenter_pixel_x && table_rotCenter_pixel_x < mask_width);
 	assert(0 < table_rotCenter_pixel_y && table_rotCenter_pixel_y < mask_height);
 }
@@ -167,15 +167,15 @@ void TableTracker::SetOCR(Vector3d _ocr) {
 	for (int i=0; i<3; i++) {
 		tf_table_topPoint[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
 		tf_table_botPoint[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
-		tf_table_position[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
+		tf_table_edge[i] += tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
 	}
 
 	if (isMove || isFirst) {
-		table_position_pixel_x += ocr[0] * pixelPerLength;
-		table_position_pixel_y -= ocr[1] * pixelPerLength;
+		table_edge_pixel_x += ocr[0] * pixelPerLength;
+		table_edge_pixel_y -= ocr[1] * pixelPerLength;
 		GenerateRectangleTableMask();
-		table_position_pixel_x -= ocr[0] * pixelPerLength;
-		table_position_pixel_y += ocr[1] * pixelPerLength;
+		table_edge_pixel_x -= ocr[0] * pixelPerLength;
+		table_edge_pixel_y += ocr[1] * pixelPerLength;
 	}
 }
 
@@ -184,9 +184,9 @@ void TableTracker::GenerateRectangleTableMask()
 	int table_pixelWidth = table_width  * pixelPerLength;
 	int table_pixelLength = table_length * pixelPerLength;
 
-	mask_minX = table_position_pixel_x;
+	mask_minX = table_edge_pixel_x;
 	mask_maxX = mask_minX + table_pixelWidth;
-	mask_minY = table_position_pixel_y;
+	mask_minY = table_edge_pixel_y;
 	mask_maxY = mask_minY + table_pixelLength;
 
 	if (mask_minX < 0) mask_minX = 0;
@@ -199,10 +199,14 @@ void TableTracker::GenerateRectangleTableMask()
 	for (int y = mask_minY; y < mask_maxY; y++) {
 		for (int x = mask_minX; x < mask_maxX; x++) {
 
-			mask_data[ y * mask_width + x ] = 255 * ((y-mask_minY)/(double)table_pixelLength) * ((y-mask_minY)/(double)table_pixelLength);
+//			mask_data[ y * mask_width + x ] = 255;
+
+			// quadratic weight
+			mask_data[ y * mask_width + x ] = 255
+					* ( (mask_maxX-x)/(double)table_pixelWidth  )// * ( (mask_maxX-x)/(double)table_pixelWidth  );
+					* ( (y-mask_minY)/(double)table_pixelLength ) * ( (y-mask_minY)/(double)table_pixelLength );
 
 			if(isColorView && isMaskView) {
-				mask_color_data[ (y * mask_width + x) * 3 + 0 ] = 255;
 				mask_color_data[ (y * mask_width + x) * 3 + 1 ] = 255;
 				mask_color_data[ (y * mask_width + x) * 3 + 2 ] = 255;
 			}
@@ -239,7 +243,7 @@ void TableTracker::GenerateRectangleTableMask()
 			cv::putText(mask_vec[idx], "Table Degree: "+ to_string(mask_minRotDeg + idx * mask_deg),
 									 cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255), 1);
 
-			imshow("mask_rot", mask_vec[idx++]);
+			imshow("Matching Masks", mask_vec[idx++]);
 
 
 			char key = (char)cv::waitKey(1000);
@@ -270,7 +274,7 @@ void TableTracker::PrintConfigData()
 	cout << "        - data size     : " << (mask_maxRotDeg - mask_minRotDeg + 1)/mask_deg << endl;
 	cout << endl;
 	cout << "     3) Table Data (Unit: mm)" << endl;
-	cout << "        - position             : " << table_position[0] << " " << table_position[1] << " " << table_position[2] << endl;
+	cout << "        - left upper edge point: " << table_edge[0] << " " << table_edge[1] << " " << table_edge[2] << endl;
 	cout << "        - width/length/height0 : " << table_width << "/" << table_length << "/" << table_height << endl;
 	cout << "        - rotation center      : " << table_rotCenter.transpose() << endl;
 	cout << "        - tf_rotation center   : " << tf_table_rotCenter[0] << " " << tf_table_rotCenter[1] << " " << tf_table_rotCenter[2] << endl;
@@ -377,7 +381,7 @@ void TableTracker::ProcessCurrentFrame()
 	// Jittering Correction: Moving Average
 	//
 	match_angleList.push_back(get<0>(match_results_raw));
-	if (match_angleList.size() == 15)
+	if (match_angleList.size() == 30)
 	{
 		if (isSpike) {
 			match_angleList.pop_back();
@@ -387,12 +391,13 @@ void TableTracker::ProcessCurrentFrame()
 		double mean = accumulate(match_angleList.begin(), match_angleList.end(), 0LL) / (double)match_angleList.size();
 
 		get<0>(match_results_filtered) = mean;
-		cv::Mat match_xor, rotM, mask_rot;
-		rotM = cv::getRotationMatrix2D(cv::Point(table_rotCenter_pixel_x, table_rotCenter_pixel_y), mean, 1.0);
-		cv::warpAffine(mask, mask_rot, rotM, mask_rot.size());
-		cv::bitwise_xor(mask_rot, binPCD, match_xor);
-		get<2>(match_results_filtered) = match_xor;
-
+		if (isMaskView) {
+			cv::Mat match_xor, rotM, mask_rot;
+			rotM = cv::getRotationMatrix2D(cv::Point(table_rotCenter_pixel_x, table_rotCenter_pixel_y), mean, 1.0);
+			cv::warpAffine(mask, mask_rot, rotM, mask_rot.size());
+			cv::bitwise_xor(mask_rot, binPCD, match_xor);
+			get<2>(match_results_filtered) = match_xor;
+		}
 		match_angleList.pop_front();
 	}
 	match_results_prev = match_results;
@@ -401,7 +406,7 @@ void TableTracker::ProcessCurrentFrame()
 	for (int i=0; i<3; i++) {
 		tf_table_topPoint[i] -= tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
 		tf_table_botPoint[i] -= tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
-		tf_table_position[i] -= tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
+		tf_table_edge[i] -= tf_world_axisX[i] * ocr[i] + tf_world_axisY[i] * ocr[i] + tf_world_axisZ[i] * ocr[i];
 	}
 }
 
@@ -419,21 +424,21 @@ void TableTracker::Render(double time)
 		match_mat_color = colorPCD;
 	}
 
-	cv::putText(match_mat, "Table Degree (Raw): " + to_string(get<0>(match_results_raw)),
-	cv::Point(10,mask_height-40), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
-	cv::putText(match_mat, "Table Degree (Filtered): " + to_string(get<0>(match_results_filtered)),
-	cv::Point(10,mask_height-60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
-	double angle = get<0>(match_results_filtered);
-
 	cv::putText(match_mat, "Frame #: " + to_string(frameNo),
 			cv::Point(10,30), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
+	cv::putText(match_mat, "Similarity: " + to_string(get<1>(match_results_raw)),
+			cv::Point(10,mask_height-80), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
+	cv::putText(match_mat, "Table Degree (Filtered): " + to_string(get<0>(match_results_filtered)),
+			cv::Point(10,mask_height-60), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
+	cv::putText(match_mat, "Table Degree (Raw): " + to_string(get<0>(match_results_raw)),
+			cv::Point(10,mask_height-40), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
 	cv::putText(match_mat, "Frame Time (s): " + to_string(time),
 			cv::Point(10,mask_height-20), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255), 1.5);
 
 
 	cv::Mat match_mat_cvt;
 	cv::cvtColor(match_mat, match_mat_cvt, cv::COLOR_GRAY2BGR);
-	cv::circle(match_mat_cvt, cv::Point(table_rotCenter_pixel_x,table_rotCenter_pixel_y), 2.0,cv::Scalar(255,0,255), 3, 8, 0);
+	cv::circle(match_mat_cvt, cv::Point(table_rotCenter_pixel_x,table_rotCenter_pixel_y), 2.0,cv::Scalar(0,0,255), 3, 8, 0);
 	cv::imshow("TableTracker", match_mat_cvt);
 
 	if(isColorView) {
@@ -446,9 +451,9 @@ void TableTracker::Render(double time)
 			color_data[ 3 * i + 1 ] = color_image_data[ 4 * i + 1 ];
 			color_data[ 3 * i + 2 ] = color_image_data[ 4 * i + 2 ];
 		}
-		cv::putText(match_mat_color, "Raw matching mask",
+		cv::putText(match_mat_color, "Matching mask (raw)",
 				cv::Point(10,mask_height-20), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar::all(255), 1.5);
-		cv::circle(match_mat_color, cv::Point(table_rotCenter_pixel_x,table_rotCenter_pixel_y), 2.0,cv::Scalar(255,0,255), 3, 8, 0);
+		cv::circle(match_mat_color, cv::Point(table_rotCenter_pixel_x,table_rotCenter_pixel_y), 2.0,cv::Scalar(0,0,255), 3, 8, 0);
 
 		cv::imshow("Kinect_Color", color);
 		cv::imshow("TableTracker_Color", match_mat_color);

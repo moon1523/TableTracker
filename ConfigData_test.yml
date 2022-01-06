@@ -4,7 +4,7 @@ Table_Reference(cm):
    cols: 3
    dt: d
    data: [25, 20, 31]
-Table_Reference_to_Position(cm):
+Table_Reference_to_Edge(cm):
    rows: 1
    cols: 3
    dt:   d

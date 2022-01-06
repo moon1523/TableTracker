@@ -4,7 +4,7 @@ Table_Reference(cm):
    cols: 3
    dt: d
    data: [92.995, 79.006, 85.1807]
-Table_Reference_to_Position(cm):
+Table_Reference_to_Edge(cm):
    rows: 1
    cols: 3
    dt:   d
@@ -14,14 +14,14 @@ Table_RotationCenter(cm):
    cols: 3
    dt:   d
    data: [113.424, 43.16411, 88.9577]
-Table_Width(cm): 55
+Table_Width(cm): 60
 Table_Length(cm): 320
 Table_Height_at_0(cm): 95
 Table_TopMargin(cm): 20
 Table_BotMargin(cm): 15
 Mask_Rot(deg): 1
-Mask_MaxRot(deg): 90
-Mask_MinRot(deg): -90
+Mask_MaxRot(deg): 60
+Mask_MinRot(deg): -60
 Crop_Width(mm): 5000
 Crop_Height(mm): 5000
 PixelPerLength(px/mm): 0.1

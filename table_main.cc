@@ -28,7 +28,7 @@ void PrintUsage()
 
     cout << "  >> Key down" << endl;
     cout << "     Tracking mode" << endl;
-    cout << "       'g'     : Generate Point Cloud PLY File for the present frame (pcd, tf_pcd)" << endl;
+    cout << "       'g'     : Generate Point Cloud PLY File" << endl;
     cout << "       'o', 'p': Decrease/Increase bot margin" << endl;
     cout << "       '[', ']': Decrease/Increase top margin" << endl;
     cout << "       's'     : Set OCR data manually" << endl;
