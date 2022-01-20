@@ -203,7 +203,7 @@ void TableTracker::GenerateRectangleTableMask()
 
 			// quadratic weight
 			mask_data[ y * mask_width + x ] = 255
-					* ( (mask_maxX-x)/(double)table_pixelWidth  )// * ( (mask_maxX-x)/(double)table_pixelWidth  );
+					//* ( (mask_maxX-x)/(double)table_pixelWidth  )// * ( (mask_maxX-x)/(double)table_pixelWidth  );
 					* ( (y-mask_minY)/(double)table_pixelLength ) * ( (y-mask_minY)/(double)table_pixelLength );
 
 			if(isColorView && isMaskView) {
